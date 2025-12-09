@@ -1,0 +1,182 @@
+{% extends 'layout.html' %}
+
+{% block title %}HadesHunter - History{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center">
+            <h1>
+                <i class="bi bi-clock-history text-primary me-2"></i>
+                Scan History
+            </h1>
+            <a href="/" class="btn btn-outline-primary">
+                <i class="bi bi-plus-circle me-1"></i>New Scan
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Stats Overview -->
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card text-center p-3">
+            <div class="display-6 text-primary" id="totalScans">-</div>
+            <div class="text-muted">Total Scans</div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center p-3">
+            <div class="display-6 text-danger" id="totalSecrets">-</div>
+            <div class="text-muted">Total Secrets Found</div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center p-3">
+            <div class="display-6 text-info" id="totalMessages">-</div>
+            <div class="text-muted">Total Messages Scanned</div>
+        </div>
+    </div>
+</div>
+
+<!-- Scans Table -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-table me-2"></i>All Scans</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover" id="scansTable">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Date</th>
+                                <th>User</th>
+                                <th>Conversations</th>
+                                <th>Messages</th>
+                                <th>Secrets</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="scansTableBody">
+                            <tr>
+                                <td colspan="8" class="text-center py-4">
+                                    <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                                    Loading...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener("DOMContentLoaded", loadHistory);
+    
+    async function loadHistory() {
+        try {
+            // Load stats
+            const statsResponse = await fetch("/api/stats");
+            const stats = await statsResponse.json();
+            
+            document.getElementById("totalScans").textContent = stats.total_scans || 0;
+            document.getElementById("totalSecrets").textContent = stats.total_secrets || 0;
+            document.getElementById("totalMessages").textContent = stats.total_messages || 0;
+            
+            // Load scans
+            const scansResponse = await fetch("/api/get_scans");
+            const data = await scansResponse.json();
+            
+            const tbody = document.getElementById("scansTableBody");
+            
+            if (!data.scans || data.scans.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="8" class="text-center py-4 text-muted">
+                            <i class="bi bi-inbox" style="font-size: 2rem;"></i>
+                            <p class="mt-2">No scans yet. <a href="/">Start a new scan</a></p>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            tbody.innerHTML = "";
+            
+            data.scans.forEach(scan => {
+                const row = document.createElement("tr");
+                const scanDate = new Date(scan.scan_time);
+                const statusBadge = scan.status === "completed" 
+                    ? '<span class="badge bg-success">Completed</span>'
+                    : '<span class="badge bg-warning">In Progress</span>';
+                
+                row.innerHTML = `
+                    <td>#${scan.id}</td>
+                    <td>${scanDate.toLocaleString()}</td>
+                    <td>${escapeHtml(scan.user_email || '-')}</td>
+                    <td>${scan.conversations_scanned || 0}</td>
+                    <td>${scan.messages_scanned || 0}</td>
+                    <td>
+                        <span class="badge ${scan.secrets_found > 0 ? 'bg-danger' : 'bg-secondary'}">
+                            ${scan.secrets_found || 0}
+                        </span>
+                    </td>
+                    <td>${statusBadge}</td>
+                    <td>
+                        <a href="/results?scan_id=${scan.id}" class="btn btn-sm btn-outline-primary me-1" title="View">
+                            <i class="bi bi-eye"></i>
+                        </a>
+                        <button class="btn btn-sm btn-outline-success me-1" onclick="exportJSON(${scan.id})" title="Export JSON">
+                            <i class="bi bi-download"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteScan(${scan.id})" title="Delete">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+            
+        } catch (error) {
+            showToast("Error", "Failed to load history: " + error.message, "error");
+        }
+    }
+    
+    async function deleteScan(scanId) {
+        if (!confirm("Are you sure you want to delete this scan and all its data?")) {
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/api/delete_scan/${scanId}`, {
+                method: "DELETE"
+            });
+            
+            const data = await response.json();
+            
+            if (data.error) {
+                showToast("Error", data.error, "error");
+                return;
+            }
+            
+            showToast("Success", "Scan deleted successfully", "success");
+            loadHistory();
+            
+        } catch (error) {
+            showToast("Error", "Failed to delete scan: " + error.message, "error");
+        }
+    }
+    
+    async function exportJSON(scanId) {
+        window.open(`/api/export_results?scan_id=${scanId}`, '_blank');
+    }
+</script>
+{% endblock %}

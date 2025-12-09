@@ -1,0 +1,362 @@
+{% extends 'layout.html' %}
+
+{% block title %}HadesHunter - Results{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center">
+            <h1>
+                <i class="bi bi-list-check text-primary me-2"></i>
+                Scan Results
+            </h1>
+            <div>
+                <button class="btn btn-outline-success me-2" onclick="exportResults()">
+                    <i class="bi bi-download me-1"></i>Export Secrets
+                </button>
+                <a href="/" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left me-1"></i>Back to Scanner
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Stats Cards -->
+<div class="row mb-4" id="statsRow">
+    <div class="col-md-3">
+        <div class="stats-card">
+            <div class="number" id="secretsCount">-</div>
+            <div class="label">Secrets Found</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stats-card">
+            <div class="number" id="conversationsCount">-</div>
+            <div class="label">Conversations Scanned</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stats-card">
+            <div class="number" id="messagesCount">-</div>
+            <div class="label">Messages Analyzed</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stats-card">
+            <div class="number" id="scanTime" style="font-size: 1.2rem;">-</div>
+            <div class="label">Scan Time</div>
+        </div>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col-md-4">
+                        <label class="form-label">Filter by Type</label>
+                        <select class="form-select" id="filterType" onchange="filterResults()">
+                            <option value="">All Types</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Min Confidence</label>
+                        <select class="form-select" id="filterConfidence" onchange="filterResults()">
+                            <option value="0">All</option>
+                            <option value="0.5">50%+</option>
+                            <option value="0.7">70%+</option>
+                            <option value="0.8">80%+</option>
+                            <option value="0.9">90%+</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Search</label>
+                        <input type="text" class="form-control" id="searchInput" placeholder="Search in results..." oninput="filterResults()">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Results List -->
+<div class="row">
+    <div class="col-12">
+        <div id="resultsContainer">
+            <div class="text-center py-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-3 text-muted">Loading results...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Context Modal -->
+<div class="modal fade" id="contextModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-chat-text me-2"></i>
+                    Message Context
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="contextModalBody">
+                <div class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let allResults = [];
+    
+    document.addEventListener("DOMContentLoaded", loadResults);
+    
+    async function loadResults() {
+        try {
+            const response = await fetch("/api/get_results");
+            const data = await response.json();
+            
+            allResults = data.secrets || [];
+            
+            // Update stats
+            document.getElementById("secretsCount").textContent = allResults.length;
+            document.getElementById("conversationsCount").textContent = data.conversations_scanned || 0;
+            document.getElementById("messagesCount").textContent = data.messages_scanned || 0;
+            
+            // Format scan time properly
+            if (data.scan_time) {
+                const scanDate = new Date(data.scan_time);
+                document.getElementById("scanTime").textContent = scanDate.toLocaleString();
+            } else {
+                document.getElementById("scanTime").textContent = "-";
+            }
+            
+            // Populate type filter
+            const types = [...new Set(allResults.map(s => s.type))];
+            const filterType = document.getElementById("filterType");
+            types.forEach(type => {
+                const option = document.createElement("option");
+                option.value = type;
+                option.textContent = type;
+                filterType.appendChild(option);
+            });
+            
+            renderResults(allResults);
+            
+        } catch (error) {
+            document.getElementById("resultsContainer").innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    Failed to load results: ${error.message}
+                </div>
+            `;
+        }
+    }
+    
+    function filterResults() {
+        const typeFilter = document.getElementById("filterType").value;
+        const confidenceFilter = parseFloat(document.getElementById("filterConfidence").value);
+        const searchFilter = document.getElementById("searchInput").value.toLowerCase();
+        
+        let filtered = allResults;
+        
+        if (typeFilter) {
+            filtered = filtered.filter(s => s.type === typeFilter);
+        }
+        
+        if (confidenceFilter > 0) {
+            filtered = filtered.filter(s => s.confidence >= confidenceFilter);
+        }
+        
+        if (searchFilter) {
+            filtered = filtered.filter(s => 
+                s.redacted_value.toLowerCase().includes(searchFilter) ||
+                s.sender.toLowerCase().includes(searchFilter) ||
+                s.type.toLowerCase().includes(searchFilter) ||
+                (s.conversation_name && s.conversation_name.toLowerCase().includes(searchFilter))
+            );
+        }
+        
+        renderResults(filtered);
+    }
+    
+    function renderResults(results) {
+        const container = document.getElementById("resultsContainer");
+        
+        if (results.length === 0) {
+            container.innerHTML = `
+                <div class="text-center py-5">
+                    <i class="bi bi-check-circle text-success" style="font-size: 4rem;"></i>
+                    <h4 class="mt-3">No Secrets Found</h4>
+                    <p class="text-muted">No potential secrets were detected in the scanned conversations.</p>
+                </div>
+            `;
+            return;
+        }
+        
+        let html = "";
+        
+        results.forEach((secret, index) => {
+            const confidenceClass = getConfidenceClass(secret.confidence);
+            const confidencePercent = Math.round(secret.confidence * 100);
+            
+            html += `
+                <div class="card secret-card ${confidenceClass}-confidence mb-3">
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <div class="d-flex align-items-center mb-2">
+                                    <span class="badge badge-secret-type me-2">${escapeHtml(secret.type)}</span>
+                                    <span class="badge bg-${confidenceClass === 'high' ? 'danger' : confidenceClass === 'medium' ? 'warning' : 'success'}">
+                                        ${confidencePercent}% confidence
+                                    </span>
+                                </div>
+                                
+                                <div class="mb-2">
+                                    <strong>Redacted Value:</strong>
+                                    <code class="redacted-secret">${escapeHtml(secret.redacted_value)}</code>
+                                </div>
+                                
+                                <div class="mb-2">
+                                    <small class="text-muted">
+                                        <i class="bi bi-person me-1"></i>${escapeHtml(secret.sender)}
+                                        <span class="mx-2">|</span>
+                                        <i class="bi bi-clock me-1"></i>${formatTimestamp(secret.timestamp)}
+                                        <span class="mx-2">|</span>
+                                        <i class="bi bi-graph-up me-1"></i>Entropy: ${secret.entropy}
+                                    </small>
+                                </div>
+                                
+                                ${secret.conversation_name ? `
+                                <div class="mb-2">
+                                    <small class="text-muted">
+                                        <i class="bi bi-chat me-1"></i>Conversation: ${escapeHtml(secret.conversation_name)}
+                                    </small>
+                                </div>
+                                ` : ''}
+                                
+                                <div class="mt-3">
+                                    <small class="text-muted">Context:</small>
+                                    <div class="bg-dark rounded p-2 mt-1" style="font-size: 0.85rem;">
+                                        <span class="text-muted">${escapeHtml(secret.context_before)}</span>
+                                        <span class="context-highlight">${escapeHtml(secret.redacted_value)}</span>
+                                        <span class="text-muted">${escapeHtml(secret.context_after)}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-4 text-end">
+                                <button class="btn btn-outline-primary btn-sm" 
+                                        onclick="showContext('${secret.conversation_id}', '${secret.message_id}')">
+                                    <i class="bi bi-chat-text me-1"></i>View Context
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+        
+        container.innerHTML = html;
+    }
+    
+    async function showContext(conversationId, messageId) {
+        const modal = new bootstrap.Modal(document.getElementById("contextModal"));
+        const modalBody = document.getElementById("contextModalBody");
+        
+        modalBody.innerHTML = `
+            <div class="text-center py-4">
+                <div class="spinner-border text-primary" role="status"></div>
+                <p class="mt-2">Loading context...</p>
+            </div>
+        `;
+        
+        modal.show();
+        
+        try {
+            const response = await fetch(`/api/get_context/${conversationId}/${messageId}`);
+            const data = await response.json();
+            
+            if (data.error) {
+                modalBody.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle me-2"></i>${data.error}
+                    </div>
+                `;
+                return;
+            }
+            
+            let html = `
+                <div class="mb-3">
+                    <strong>Conversation:</strong> ${escapeHtml(data.conversation_name)}
+                </div>
+                <div class="messages-container">
+            `;
+            
+            data.messages.forEach(msg => {
+                const bubbleClass = msg.is_from_me ? "from-me" : "from-other";
+                const targetClass = msg.is_target ? "target-message" : "";
+                
+                html += `
+                    <div class="d-flex ${msg.is_from_me ? 'justify-content-end' : 'justify-content-start'}">
+                        <div class="message-bubble ${bubbleClass} ${targetClass}">
+                            <div class="mb-1">
+                                <strong>${escapeHtml(msg.sender)}</strong>
+                                <small class="text-muted ms-2">${formatTimestamp(msg.timestamp)}</small>
+                            </div>
+                            <div>${DOMPurify.sanitize(msg.content)}</div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += "</div>";
+            modalBody.innerHTML = html;
+            
+        } catch (error) {
+            modalBody.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle me-2"></i>Failed to load context: ${error.message}
+                </div>
+            `;
+        }
+    }
+    
+    async function exportResults() {
+        try {
+            const response = await fetch("/api/export_results");
+            const data = await response.json();
+            
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `teams_secrets_${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            showToast("Success", "Results exported successfully", "success");
+            
+        } catch (error) {
+            showToast("Error", "Failed to export results: " + error.message, "error");
+        }
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,155 @@
+{% extends 'layout.html' %}
+
+{% block title %}HadesHunter - About{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h1>
+            <i class="bi bi-info-circle text-primary me-2"></i>
+            About HadesHunter
+        </h1>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-shield-check me-2"></i>What is HadesHunter?</h5>
+            </div>
+            <div class="card-body">
+                <p>
+                    HadesHunter is a security tool designed to scan Microsoft Teams conversations 
+                    for accidentally leaked secrets, credentials, and sensitive information.
+                </p>
+                <p>
+                    It helps security teams and penetration testers identify potential data leaks 
+                    in corporate communications, such as:
+                </p>
+                <ul>
+                    <li><strong>API Keys</strong> - AWS, Azure, Google Cloud, GitHub, Slack, etc.</li>
+                    <li><strong>Passwords</strong> - Shared credentials in chat messages</li>
+                    <li><strong>Tokens</strong> - JWT, OAuth, Bearer tokens</li>
+                    <li><strong>Connection Strings</strong> - Database and service connections</li>
+                    <li><strong>Private Keys</strong> - SSH, PGP, certificates</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-translate me-2"></i>Supported Languages</h5>
+            </div>
+            <div class="card-body">
+                <p>The scanner detects secrets shared in conversations in multiple languages:</p>
+                <div class="row">
+                    <div class="col-md-6">
+                        <ul class="list-unstyled">
+                            <li><i class="bi bi-check-circle text-success me-2"></i>English</li>
+                            <li><i class="bi bi-check-circle text-success me-2"></i>French</li>
+                            <li><i class="bi bi-check-circle text-success me-2"></i>German</li>
+                            <li><i class="bi bi-check-circle text-success me-2"></i>Spanish</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <ul class="list-unstyled">
+                            <li><i class="bi bi-check-circle text-success me-2"></i>Portuguese</li>
+                            <li><i class="bi bi-check-circle text-success me-2"></i>Italian</li>
+                            <li><i class="bi bi-check-circle text-success me-2"></i>Dutch</li>
+                            <li><i class="bi bi-check-circle text-success me-2"></i>Polish</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-gear me-2"></i>How It Works</h5>
+            </div>
+            <div class="card-body">
+                <ol>
+                    <li class="mb-2">
+                        <strong>Authentication</strong> - Provide a refresh token or access token 
+                        to authenticate with Microsoft Teams API.
+                    </li>
+                    <li class="mb-2">
+                        <strong>Conversation Retrieval</strong> - The tool fetches all accessible 
+                        Teams conversations and messages.
+                    </li>
+                    <li class="mb-2">
+                        <strong>Pattern Matching</strong> - Each message is scanned using regex patterns 
+                        for known secret formats (API keys, tokens, etc.).
+                    </li>
+                    <li class="mb-2">
+                        <strong>Entropy Analysis</strong> - Shannon entropy is calculated to filter 
+                        out false positives and identify high-randomness strings.
+                    </li>
+                    <li class="mb-2">
+                        <strong>Context Extraction</strong> - For each detected secret, surrounding 
+                        messages are captured for context.
+                    </li>
+                </ol>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-lightning me-2"></i>Detection Types</h5>
+            </div>
+            <div class="card-body">
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span>AWS Keys</span>
+                        <span class="badge bg-danger">High</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span>Azure Secrets</span>
+                        <span class="badge bg-danger">High</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span>GitHub Tokens</span>
+                        <span class="badge bg-danger">High</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span>Slack Tokens</span>
+                        <span class="badge bg-warning">Medium</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span>JWT Tokens</span>
+                        <span class="badge bg-warning">Medium</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span>Passwords</span>
+                        <span class="badge bg-warning">Medium</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span>Private Keys</span>
+                        <span class="badge bg-danger">High</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span>Connection Strings</span>
+                        <span class="badge bg-warning">Medium</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Disclaimer</h5>
+            </div>
+            <div class="card-body">
+                <p class="small text-muted mb-0">
+                    This tool is intended for authorized security testing and auditing purposes only. 
+                    Ensure you have proper authorization before scanning any Teams environment. 
+                    The authors are not responsible for any misuse of this tool.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
