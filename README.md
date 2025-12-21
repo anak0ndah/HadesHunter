@@ -17,13 +17,12 @@ Corporate chat platforms like Microsoft Teams are often overlooked during securi
 - Connection strings copy-pasted for convenience
 - Private keys shared during troubleshooting
 - Service account credentials exchanged during onboarding
+![Home](images/HomePage.png)
 
-![Intro](images/TerminatorResults.png)
 
 This data persists in chat history and can be accessed by attackers who compromise a user account or obtain valid tokens. HadesHunter helps identify these exposures.
 
-
-![Home](images/HomePage.png)
+![Intro](images/TerminatorResults.png)
 
 ## What it does
 
@@ -127,6 +126,7 @@ This tool was built using concepts and code from:
 
 - **[TruffleHog](https://github.com/trufflesecurity/trufflehog)** by Truffle Security - Secret detection patterns and entropy-based analysis algorithms were adapted from their approach
 - **[GraphSpy](https://github.com/RedByte1337/GraphSpy)** by RedByte1337 - Teams API integration, token handling, and web interface structure were inspired by their implementation
+- **[GraphRunner](https://github.com/dafthack/GraphRunner)** by dafthack - Microsoft Graph API techniques and token manipulation concepts
 
 ## Disclaimer
 
