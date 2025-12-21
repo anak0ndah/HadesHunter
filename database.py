@@ -104,6 +104,69 @@ def init_db():
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_secrets_conv ON secrets(conversation_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, scan_id)')
         
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS emails (
+                id TEXT PRIMARY KEY,
+                scan_id INTEGER,
+                subject TEXT,
+                sender TEXT,
+                sender_name TEXT,
+                recipients TEXT,
+                date TEXT,
+                preview TEXT,
+                body_content TEXT,
+                body_type TEXT,
+                has_attachments INTEGER DEFAULT 0,
+                web_link TEXT,
+                importance TEXT,
+                is_read INTEGER DEFAULT 0,
+                secrets_found INTEGER DEFAULT 0,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (scan_id) REFERENCES scans(id)
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS email_attachments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email_id TEXT,
+                scan_id INTEGER,
+                attachment_id TEXT,
+                name TEXT,
+                content_type TEXT,
+                size INTEGER,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (email_id) REFERENCES emails(id),
+                FOREIGN KEY (scan_id) REFERENCES scans(id)
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS files (
+                id TEXT,
+                drive_id TEXT,
+                scan_id INTEGER,
+                name TEXT,
+                size INTEGER,
+                size_formatted TEXT,
+                web_url TEXT,
+                created_date TEXT,
+                modified_date TEXT,
+                preview TEXT,
+                mime_type TEXT,
+                parent_path TEXT,
+                source TEXT,
+                secrets_found INTEGER DEFAULT 0,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id, drive_id, scan_id),
+                FOREIGN KEY (scan_id) REFERENCES scans(id)
+            )
+        ''')
+        
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_emails_scan ON emails(scan_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_files_scan ON files(scan_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_attachments_email ON email_attachments(email_id)')
+        
         conn.commit()
 
 
@@ -428,9 +491,164 @@ def get_message_context(scan_id: int, conversation_id: str, message_id: str, con
         }
 
 
+def save_email(scan_id: int, email_data: Dict) -> bool:
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT OR REPLACE INTO emails (
+                id, scan_id, subject, sender, sender_name, recipients, date,
+                preview, body_content, body_type, has_attachments, web_link,
+                importance, is_read, secrets_found
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            email_data.get('id', ''),
+            scan_id,
+            email_data.get('subject', ''),
+            email_data.get('sender', ''),
+            email_data.get('sender_name', ''),
+            json.dumps(email_data.get('recipients', [])),
+            email_data.get('date', ''),
+            email_data.get('preview', ''),
+            email_data.get('body_content', ''),
+            email_data.get('body_type', ''),
+            1 if email_data.get('has_attachments') else 0,
+            email_data.get('web_link', ''),
+            email_data.get('importance', 'normal'),
+            1 if email_data.get('is_read') else 0,
+            email_data.get('secrets_found', 0)
+        ))
+        return True
+
+
+def save_email_attachment(scan_id: int, email_id: str, attachment_data: Dict):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO email_attachments (
+                email_id, scan_id, attachment_id, name, content_type, size
+            ) VALUES (?, ?, ?, ?, ?, ?)
+        ''', (
+            email_id,
+            scan_id,
+            attachment_data.get('id', ''),
+            attachment_data.get('name', ''),
+            attachment_data.get('contentType', ''),
+            attachment_data.get('size', 0)
+        ))
+
+
+def get_emails(scan_id: int, limit: int = 500) -> List[Dict]:
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT * FROM emails WHERE scan_id = ? ORDER BY date DESC LIMIT ?
+        ''', (scan_id, limit))
+        
+        results = []
+        for row in cursor.fetchall():
+            email = dict(row)
+            email['recipients'] = json.loads(email.get('recipients') or '[]')
+            email['has_attachments'] = bool(email.get('has_attachments'))
+            email['is_read'] = bool(email.get('is_read'))
+            results.append(email)
+        return results
+
+
+def get_email(scan_id: int, email_id: str) -> Optional[Dict]:
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM emails WHERE scan_id = ? AND id = ?', (scan_id, email_id))
+        row = cursor.fetchone()
+        if row:
+            email = dict(row)
+            email['recipients'] = json.loads(email.get('recipients') or '[]')
+            email['has_attachments'] = bool(email.get('has_attachments'))
+            email['is_read'] = bool(email.get('is_read'))
+            return email
+        return None
+
+
+def get_email_attachments(scan_id: int, email_id: str) -> List[Dict]:
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT * FROM email_attachments WHERE scan_id = ? AND email_id = ?
+        ''', (scan_id, email_id))
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def save_file(scan_id: int, file_data: Dict, source: str = "search") -> bool:
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT OR REPLACE INTO files (
+                id, drive_id, scan_id, name, size, size_formatted, web_url,
+                created_date, modified_date, preview, mime_type, parent_path,
+                source, secrets_found
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            file_data.get('id', ''),
+            file_data.get('drive_id', ''),
+            scan_id,
+            file_data.get('name', ''),
+            file_data.get('size', 0),
+            file_data.get('size_formatted', ''),
+            file_data.get('web_url', ''),
+            file_data.get('created_date', ''),
+            file_data.get('modified_date', ''),
+            file_data.get('preview', ''),
+            file_data.get('mime_type', ''),
+            file_data.get('parent_path', ''),
+            source,
+            file_data.get('secrets_found', 0)
+        ))
+        return True
+
+
+def get_files(scan_id: int, source: str = None, limit: int = 500) -> List[Dict]:
+    with get_db() as conn:
+        cursor = conn.cursor()
+        if source:
+            cursor.execute('''
+                SELECT * FROM files WHERE scan_id = ? AND source = ? 
+                ORDER BY modified_date DESC LIMIT ?
+            ''', (scan_id, source, limit))
+        else:
+            cursor.execute('''
+                SELECT * FROM files WHERE scan_id = ? ORDER BY modified_date DESC LIMIT ?
+            ''', (scan_id, limit))
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def get_file(scan_id: int, drive_id: str, item_id: str) -> Optional[Dict]:
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT * FROM files WHERE scan_id = ? AND drive_id = ? AND id = ?
+        ''', (scan_id, drive_id, item_id))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+
+def update_scan_counts(scan_id: int, emails_scanned: int = 0, files_scanned: int = 0):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE scans SET 
+                messages_scanned = messages_scanned + ?,
+                conversations_scanned = conversations_scanned + ?
+            WHERE id = ?
+        ''', (emails_scanned, files_scanned, scan_id))
+
+
 def delete_scan(scan_id: int):
     with get_db() as conn:
         cursor = conn.cursor()
+        cursor.execute('DELETE FROM email_attachments WHERE scan_id = ?', (scan_id,))
+        cursor.execute('DELETE FROM emails WHERE scan_id = ?', (scan_id,))
+        cursor.execute('DELETE FROM files WHERE scan_id = ?', (scan_id,))
         cursor.execute('DELETE FROM messages WHERE scan_id = ?', (scan_id,))
         cursor.execute('DELETE FROM secrets WHERE scan_id = ?', (scan_id,))
         cursor.execute('DELETE FROM conversations WHERE scan_id = ?', (scan_id,))
@@ -456,6 +674,32 @@ def get_stats() -> Dict:
             'total_secrets': total_secrets,
             'total_messages': total_messages
         }
+
+
+def delete_secret(secret_id: int):
+    """Delete a single secret by ID."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM secrets WHERE id = ?', (secret_id,))
+
+
+def clear_secrets(scan_id: int):
+    """Delete all secrets for a scan."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM secrets WHERE scan_id = ?', (scan_id,))
+
+
+def delete_scan(scan_id: int):
+    """Delete a scan and all its related data."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM secrets WHERE scan_id = ?', (scan_id,))
+        cursor.execute('DELETE FROM messages WHERE scan_id = ?', (scan_id,))
+        cursor.execute('DELETE FROM conversations WHERE scan_id = ?', (scan_id,))
+        cursor.execute('DELETE FROM emails WHERE scan_id = ?', (scan_id,))
+        cursor.execute('DELETE FROM files WHERE scan_id = ?', (scan_id,))
+        cursor.execute('DELETE FROM scans WHERE id = ?', (scan_id,))
 
 
 init_db()

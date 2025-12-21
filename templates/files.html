@@ -1,0 +1,366 @@
+{% extends "layout.html" %}
+
+{% block title %}Files - HadesHunter{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2 class="mb-2"><i class="bi bi-share-fill me-2"></i>OneDrive Secret Scanner</h2>
+        <p class="text-muted mb-4">Scan your OneDrive and SharePoint files for leaked credentials, API keys, and sensitive data.</p>
+        
+        <!-- Token Configuration -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-key me-2"></i>Microsoft Graph Token</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-8">
+                        <div class="mb-3">
+                            <label class="form-label">Refresh Token</label>
+                            <textarea class="form-control token-input" id="refreshToken" rows="3" 
+                                placeholder="Paste your Microsoft refresh token here..."></textarea>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <label class="form-label">Tenant</label>
+                            <input type="text" class="form-control" id="tenant" placeholder="common" value="common">
+                        </div>
+                        <button class="btn btn-primary w-100" onclick="configureToken()">
+                            <i class="bi bi-check-circle me-2"></i>Configure Token
+                        </button>
+                    </div>
+                </div>
+                <div id="tokenStatus" class="mt-3" style="display: none;">
+                    <div class="alert alert-success mb-0">
+                        <i class="bi bi-check-circle me-2"></i>
+                        <span id="tokenStatusText">Token configured</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Scan Configuration -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-shield-check me-2"></i>Secret Detection Scan</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info mb-3">
+                    <i class="bi bi-info-circle me-2"></i>
+                    Scans your OneDrive files using the <strong>built-in secret detector</strong> with 30+ patterns: 
+                    AWS Keys, Azure Secrets, GitHub Tokens, JWT, Passwords, API Keys, Connection Strings, etc.
+                </div>
+                <div class="row">
+                    <div class="col-md-4">
+                        <label class="form-label">Number of Files to Scan</label>
+                        <select class="form-select" id="maxResults">
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                            <option value="200" selected>200</option>
+                            <option value="500">500</option>
+                            <option value="1000">ALL (1000+)</option>
+                        </select>
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label">&nbsp;</label>
+                        <button class="btn btn-danger w-100 btn-lg" onclick="scanFiles()" id="scanBtn">
+                            <i class="bi bi-search me-2"></i>Scan OneDrive for Secrets
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Results Section -->
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-files me-2"></i>Detected Secrets</h5>
+                <span class="badge bg-danger" id="resultsCount">0 secrets</span>
+            </div>
+            <div class="card-body">
+                <div id="fileResults">
+                    <p class="text-muted text-center py-4">Configure token and scan to detect secrets</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Secret Detail Modal -->
+<div class="modal fade" id="secretModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content bg-dark">
+            <div class="modal-header">
+                <h5 class="modal-title" id="secretModalTitle">Secret Details</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="secretModalBody">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function configureToken() {
+    const refreshToken = document.getElementById('refreshToken').value.trim();
+    const tenant = document.getElementById('tenant').value.trim() || 'common';
+    
+    if (!refreshToken) {
+        showToast('Error', 'Please enter a refresh token', 'error');
+        return;
+    }
+    
+    showLoading('Configuring Graph API token...');
+    
+    try {
+        const response = await fetch('/api/set_graph_token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refresh_token: refreshToken, tenant: tenant })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            document.getElementById('tokenStatus').style.display = 'block';
+            document.getElementById('tokenStatusText').textContent = 
+                `Token configured for ${data.token_info.user}`;
+            showToast('Success', 'Graph API token configured successfully', 'success');
+        } else {
+            showToast('Error', data.error || 'Failed to configure token', 'error');
+        }
+    } catch (error) {
+        showToast('Error', 'Failed to configure token: ' + error.message, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+async function scanFiles() {
+    const maxResults = parseInt(document.getElementById('maxResults').value);
+    
+    showLoading(`Scanning ${maxResults} files for secrets...`);
+    document.getElementById('scanBtn').disabled = true;
+    
+    try {
+        const response = await fetch('/api/scan_files_secrets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ max_results: maxResults })
+        });
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            showToast('Error', data.error, 'error');
+            return;
+        }
+        
+        displaySecretResults(data);
+        
+        if (data.total_secrets > 0) {
+            showToast('Secrets Found!', `Found ${data.total_secrets} secrets in ${data.files_with_secrets} files!`, 'warning');
+        } else {
+            showToast('Scan Complete', `Scanned ${data.files_scanned} files - No secrets detected`, 'success');
+        }
+    } catch (error) {
+        showToast('Error', 'Scan failed: ' + error.message, 'error');
+    } finally {
+        hideLoading();
+        document.getElementById('scanBtn').disabled = false;
+    }
+}
+
+function displaySecretResults(data) {
+    const container = document.getElementById('fileResults');
+    document.getElementById('resultsCount').textContent = `${data.total_secrets} secrets`;
+    
+    if (!data.secrets || data.secrets.length === 0) {
+        container.innerHTML = `
+            <div class="text-center py-4">
+                <i class="bi bi-check-circle text-success fs-1"></i>
+                <p class="mt-3">Scanned <strong>${data.files_scanned}</strong> files<br>
+                <span class="text-success">No secrets detected</span></p>
+            </div>
+        `;
+        return;
+    }
+    
+    let html = `
+        <div class="alert alert-warning mb-3">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            Scanned <strong>${data.files_scanned}</strong> files - 
+            Found <strong>${data.total_secrets}</strong> secrets in <strong>${data.files_with_secrets}</strong> files
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover" id="secretsTable">
+                <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th>Secret (Redacted)</th>
+                        <th>File Name</th>
+                        <th>Size</th>
+                        <th>Confidence</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+    
+    for (const secret of data.secrets) {
+        const confidenceClass = secret.confidence >= 0.8 ? 'bg-danger' : 
+                               secret.confidence >= 0.6 ? 'bg-warning' : 'bg-secondary';
+        
+        html += `
+            <tr>
+                <td><span class="badge bg-primary">${escapeHtml(secret.type)}</span></td>
+                <td><code class="text-danger">${escapeHtml(secret.redacted_value)}</code></td>
+                <td>
+                    <small class="text-truncate d-block" style="max-width: 200px;" title="${escapeHtml(secret.file_name || '')}">
+                        <i class="bi bi-file-earmark me-1"></i>${escapeHtml(secret.file_name || 'Unknown')}
+                    </small>
+                </td>
+                <td><small>${escapeHtml(secret.file_size || '')}</small></td>
+                <td><span class="badge ${confidenceClass}">${Math.round(secret.confidence * 100)}%</span></td>
+                <td>
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-info" onclick="viewSecretDetails(${JSON.stringify(secret).replace(/"/g, '&quot;')})" title="Details">
+                            <i class="bi bi-info-circle"></i>
+                        </button>
+                        <button class="btn btn-outline-warning" onclick="showFileContext('${secret.drive_id}', '${secret.item_id}', '${escapeHtml(secret.raw_value)}')" title="Show Context">
+                            <i class="bi bi-file-text"></i>
+                        </button>
+                        <button class="btn btn-outline-success" onclick="downloadFile('${secret.drive_id}', '${secret.item_id}')" title="Download">
+                            <i class="bi bi-download"></i>
+                        </button>
+                        ${secret.web_url ? `<a href="${secret.web_url}" target="_blank" class="btn btn-outline-primary" title="Open"><i class="bi bi-box-arrow-up-right"></i></a>` : ''}
+                    </div>
+                </td>
+            </tr>
+        `;
+    }
+    
+    html += '</tbody></table></div>';
+    container.innerHTML = html;
+    
+    $('#secretsTable').DataTable({
+        order: [[4, 'desc']],
+        pageLength: 25
+    });
+}
+
+function viewSecretDetails(secret) {
+    document.getElementById('secretModalTitle').textContent = secret.type;
+    document.getElementById('secretModalBody').innerHTML = `
+        <div class="mb-3">
+            <strong>Secret Type:</strong> <span class="badge bg-primary">${escapeHtml(secret.type)}</span>
+        </div>
+        <div class="mb-3">
+            <strong>Redacted Value:</strong><br>
+            <code class="text-danger fs-5">${escapeHtml(secret.redacted_value)}</code>
+        </div>
+        <div class="mb-3">
+            <strong>Confidence:</strong> ${Math.round(secret.confidence * 100)}%
+        </div>
+        <div class="mb-3">
+            <strong>Entropy:</strong> ${secret.entropy}
+        </div>
+        <hr>
+        <div class="mb-3">
+            <strong>File Name:</strong> ${escapeHtml(secret.file_name || 'Unknown')}
+        </div>
+        <div class="mb-3">
+            <strong>File Size:</strong> ${escapeHtml(secret.file_size || 'Unknown')}
+        </div>
+        <hr>
+        <div class="mb-3">
+            <strong>Context:</strong>
+            <pre class="bg-secondary p-2 rounded mt-2" style="white-space: pre-wrap;">...${escapeHtml(secret.context_before || '')} <mark class="bg-danger text-white">${escapeHtml(secret.redacted_value)}</mark> ${escapeHtml(secret.context_after || '')}...</pre>
+        </div>
+    `;
+    
+    const modal = new bootstrap.Modal(document.getElementById('secretModal'));
+    modal.show();
+}
+
+function downloadFile(driveId, itemId) {
+    window.open(`/api/download_file/${driveId}/${itemId}`, '_blank');
+}
+
+async function showFileContext(driveId, itemId, secretValue) {
+    showLoading('Loading file content...');
+    
+    try {
+        const response = await fetch(`/api/get_file_preview/${driveId}/${itemId}`);
+        const data = await response.json();
+        
+        if (data.error) {
+            showToast('Error', data.error, 'error');
+            return;
+        }
+        
+        let content = data.preview || 'No preview available';
+        
+        // Highlight the secret in the content
+        const secretRegex = new RegExp(`(${escapeRegex(secretValue)})`, 'gi');
+        const highlightedContent = escapeHtml(content).replace(
+            secretRegex, 
+            '<mark class="bg-danger text-white px-1 rounded">$1</mark>'
+        );
+        
+        const modalHtml = `
+            <div class="modal fade" id="contextModal" tabindex="-1">
+                <div class="modal-dialog modal-xl">
+                    <div class="modal-content bg-dark">
+                        <div class="modal-header">
+                            <h5 class="modal-title">
+                                <i class="bi bi-file-earmark me-2"></i>File Preview
+                            </h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="alert alert-warning mb-3">
+                                <i class="bi bi-exclamation-triangle me-2"></i>
+                                <strong>Secret detected:</strong> <code class="text-danger">${escapeHtml(secretValue)}</code>
+                                <small class="d-block mt-1">The secret is highlighted in red below</small>
+                            </div>
+                            <div class="file-content p-3 bg-secondary rounded" style="max-height: 500px; overflow-y: auto; white-space: pre-wrap; font-family: monospace; font-size: 0.9rem;">
+                                ${highlightedContent}
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                            <button type="button" class="btn btn-primary" onclick="downloadFile('${driveId}', '${itemId}')">
+                                <i class="bi bi-download me-2"></i>Download File
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        const existingModal = document.getElementById('contextModal');
+        if (existingModal) existingModal.remove();
+        
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        const modal = new bootstrap.Modal(document.getElementById('contextModal'));
+        modal.show();
+    } catch (error) {
+        showToast('Error', 'Failed to load file: ' + error.message, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+function escapeRegex(string) {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+</script>
+{% endblock %}

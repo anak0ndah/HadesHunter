@@ -1,7 +1,9 @@
 # HadesHunter
-Secret scanner for Microsoft Teams conversations (and more is coming).
-HadesHunter was created to address a common blind spot in corporate security: chat platforms. During penetration tests and red team engagements, I noticed that Microsoft Teams conversations often contain sensitive data that users share without thinking twice - passwords, API keys, connection strings, and more.
-This tool automates the discovery of these secrets, helping security professionals demonstrate the real-world risk of credential sharing in chat applications.
+Advanced secret scanner for Microsoft 365 environments - Teams, Outlook, and OneDrive/SharePoint.
+
+HadesHunter was created to address a common blind spot in corporate security: Microsoft 365 platforms. During penetration tests and red team engagements, I noticed that Teams conversations, emails, and cloud files often contain sensitive data that users share without thinking twice - passwords, API keys, connection strings, and more.
+
+This tool automates the discovery of these secrets, helping security professionals demonstrate the real-world risk of credential sharing in Microsoft 365 applications.
 
 ![Mascot](images/mascot.png)
 
@@ -27,8 +29,15 @@ https://github.com/user-attachments/assets/86c0d931-3acd-4807-9621-cbe191845145
 
 ## What it does
 
-HadesHunter scans Teams conversations to detect leaked secrets:
+HadesHunter scans Microsoft 365 environments to detect leaked secrets:
 
+### Scanners
+- **Teams Scanner** - Scan all Teams conversations and chats
+- **Outlook Scanner** - Analyze inbox emails for sensitive data
+- **OneDrive/SharePoint Scanner** - Scan cloud files for hardcoded secrets
+- **Terminator** - All-in-one scanner that combines Teams, Emails, and Files in a single scan
+
+### Detection Patterns (30+)
 - **Cloud credentials** - AWS keys, Azure secrets, GCP tokens
 - **API keys** - GitHub, Slack, OpenAI, Stripe, SendGrid, Twilio, Discord
 - **Authentication tokens** - JWT, Bearer, OAuth, Basic Auth
@@ -134,6 +143,20 @@ This tool was built using concepts and code from:
 ## Version
 
 v1.0 - Initial release. More features coming soon.
+
+## Changelog
+
+### v1.1 - 2025-12-21
+- **New: Outlook Email Scanner** - Scan inbox emails for secrets and credentials
+- **New: OneDrive/SharePoint Scanner** - Scan cloud files for hardcoded secrets
+- **New: Terminator Mode** - All-in-one scanner combining Teams, Emails, and Files
+- **New: Show Context** - View full message/email/file content with secrets highlighted
+- **New: Category Filters** - Filter results by source (Teams, Email, File)
+- **New: Delete Functionality** - Delete individual results or clear entire scans
+- **New: Scan History** - View and manage past scan results
+- **New: Home Page** - Redesigned landing page with feature overview
+- **Improved: Navigation** - Separate pages for Teams, Emails, Files, and History
+- **Improved: UI** - Better badges, icons, and result display
 
 ## License
 

@@ -1,0 +1,463 @@
+{% extends "layout.html" %}
+
+{% block title %}Emails - HadesHunter{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2 class="mb-4"><i class="bi bi-envelope-fill me-2"></i>Email Scanner</h2>
+        
+        <!-- Token Configuration -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-key me-2"></i>Microsoft Graph Token</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-8">
+                        <div class="mb-3">
+                            <label class="form-label">Refresh Token (recommended)</label>
+                            <textarea class="form-control token-input" id="refreshToken" rows="3" 
+                                placeholder="Paste your Microsoft refresh token here..."></textarea>
+                            <small class="text-muted">The token will be exchanged for a Graph API access token</small>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <label class="form-label">Tenant (optional)</label>
+                            <input type="text" class="form-control" id="tenant" placeholder="common">
+                        </div>
+                        <button class="btn btn-primary w-100" onclick="configureToken()">
+                            <i class="bi bi-check-circle me-2"></i>Configure Token
+                        </button>
+                    </div>
+                </div>
+                <div id="tokenStatus" class="mt-3" style="display: none;">
+                    <div class="alert alert-success mb-0">
+                        <i class="bi bi-check-circle me-2"></i>
+                        <span id="tokenStatusText">Token configured</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Search Section -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-search me-2"></i>Search Emails</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-8">
+                        <div class="mb-3">
+                            <label class="form-label">Search Term (KQL supported)</label>
+                            <input type="text" class="form-control" id="searchTerm" 
+                                placeholder="password, from:admin@company.com, hasattachment:true...">
+                            <small class="text-muted">
+                                Examples: <code>password</code>, <code>from:user@domain.com</code>, 
+                                <code>subject:credentials</code>, <code>hasattachment:true</code>
+                            </small>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="mb-3">
+                            <label class="form-label">Max Results</label>
+                            <select class="form-select" id="maxResults">
+                                <option value="25">25</option>
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                                <option value="200">200</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="mb-3">
+                            <label class="form-label">&nbsp;</label>
+                            <button class="btn btn-primary w-100" onclick="searchEmails()">
+                                <i class="bi bi-search me-2"></i>Search
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="scanSecrets" checked>
+                    <label class="form-check-label" for="scanSecrets">
+                        Scan for secrets in email content
+                    </label>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Detectors Section -->
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-shield-check me-2"></i>GraphRunner Detectors</h5>
+                <button class="btn btn-sm btn-outline-primary" onclick="loadDetectors()">
+                    <i class="bi bi-arrow-clockwise me-1"></i>Load Detectors
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="detectorsContainer" class="row">
+                    <p class="text-muted">Click "Load Detectors" to see available secret detection patterns</p>
+                </div>
+                <div class="mt-3">
+                    <button class="btn btn-warning" onclick="runDetectorScan('emails')" id="runDetectorsBtn" disabled>
+                        <i class="bi bi-play-fill me-2"></i>Run Selected Detectors on Emails
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Results Section -->
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-inbox me-2"></i>Results</h5>
+                <span class="badge bg-primary" id="resultsCount">0 emails</span>
+            </div>
+            <div class="card-body">
+                <div id="emailResults">
+                    <p class="text-muted text-center py-4">Search for emails to see results here</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Email Detail Modal -->
+<div class="modal fade" id="emailModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content bg-dark">
+            <div class="modal-header">
+                <h5 class="modal-title" id="emailModalTitle">Email Details</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="emailModalBody">
+                <!-- Email content will be loaded here -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="downloadEmailBtn">
+                    <i class="bi bi-download me-2"></i>Download EML
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentEmailId = null;
+let selectedDetectors = [];
+
+async function configureToken() {
+    const refreshToken = document.getElementById('refreshToken').value.trim();
+    const tenant = document.getElementById('tenant').value.trim() || 'common';
+    
+    if (!refreshToken) {
+        showToast('Error', 'Please enter a refresh token', 'error');
+        return;
+    }
+    
+    showLoading('Configuring Graph API token...');
+    
+    try {
+        const response = await fetch('/api/set_graph_token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refresh_token: refreshToken, tenant: tenant })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            document.getElementById('tokenStatus').style.display = 'block';
+            document.getElementById('tokenStatusText').textContent = 
+                `Token configured for ${data.token_info.user}`;
+            showToast('Success', 'Graph API token configured successfully', 'success');
+        } else {
+            showToast('Error', data.error || 'Failed to configure token', 'error');
+        }
+    } catch (error) {
+        showToast('Error', 'Failed to configure token: ' + error.message, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+async function searchEmails() {
+    const searchTerm = document.getElementById('searchTerm').value.trim();
+    const maxResults = document.getElementById('maxResults').value;
+    const scanSecrets = document.getElementById('scanSecrets').checked;
+    
+    if (!searchTerm) {
+        showToast('Error', 'Please enter a search term', 'error');
+        return;
+    }
+    
+    showLoading('Searching emails...');
+    
+    try {
+        const response = await fetch('/api/search_emails', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                search_term: searchTerm,
+                max_results: parseInt(maxResults),
+                scan_secrets: scanSecrets
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            showToast('Error', data.error, 'error');
+            return;
+        }
+        
+        displayEmailResults(data.emails, data.total, data.secrets_found);
+        document.getElementById('resultsCount').textContent = `${data.emails.length} of ${data.total} emails`;
+        
+        if (data.secrets_found > 0) {
+            showToast('Secrets Found', `Found ${data.secrets_found} potential secrets!`, 'warning');
+        }
+    } catch (error) {
+        showToast('Error', 'Search failed: ' + error.message, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+function displayEmailResults(emails, total, secretsFound) {
+    const container = document.getElementById('emailResults');
+    
+    if (!emails || emails.length === 0) {
+        container.innerHTML = '<p class="text-muted text-center py-4">No emails found</p>';
+        return;
+    }
+    
+    let html = `
+        <div class="alert alert-info mb-3">
+            <i class="bi bi-info-circle me-2"></i>
+            Found <strong>${total}</strong> emails total, showing <strong>${emails.length}</strong>.
+            ${secretsFound > 0 ? `<span class="text-danger ms-2"><i class="bi bi-exclamation-triangle"></i> ${secretsFound} secrets detected!</span>` : ''}
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover" id="emailsTable">
+                <thead>
+                    <tr>
+                        <th>Subject</th>
+                        <th>From</th>
+                        <th>Date</th>
+                        <th>Attachments</th>
+                        <th>Secrets</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+    
+    for (const email of emails) {
+        const secretsBadge = email.secrets_found > 0 
+            ? `<span class="badge bg-danger">${email.secrets_found}</span>` 
+            : '<span class="badge bg-secondary">0</span>';
+        const attachmentIcon = email.has_attachments 
+            ? '<i class="bi bi-paperclip text-warning"></i>' 
+            : '-';
+        
+        html += `
+            <tr class="${email.secrets_found > 0 ? 'table-danger' : ''}">
+                <td>
+                    <a href="#" onclick="viewEmail('${email.id}'); return false;" class="text-decoration-none">
+                        ${escapeHtml(email.subject || '(No subject)')}
+                    </a>
+                    <br><small class="text-muted">${escapeHtml(email.preview?.substring(0, 80) || '')}...</small>
+                </td>
+                <td>
+                    <small>${escapeHtml(email.sender_name || email.sender)}</small>
+                </td>
+                <td><small>${formatTimestamp(email.date)}</small></td>
+                <td class="text-center">${attachmentIcon}</td>
+                <td class="text-center">${secretsBadge}</td>
+                <td>
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-primary" onclick="viewEmail('${email.id}')" title="View">
+                            <i class="bi bi-eye"></i>
+                        </button>
+                        <button class="btn btn-outline-success" onclick="downloadEmail('${email.id}')" title="Download EML">
+                            <i class="bi bi-download"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }
+    
+    html += '</tbody></table></div>';
+    container.innerHTML = html;
+    
+    $('#emailsTable').DataTable({
+        order: [[2, 'desc']],
+        pageLength: 25
+    });
+}
+
+async function viewEmail(emailId) {
+    currentEmailId = emailId;
+    showLoading('Loading email...');
+    
+    try {
+        const response = await fetch(`/api/get_email/${emailId}`);
+        const data = await response.json();
+        
+        if (data.error) {
+            showToast('Error', data.error, 'error');
+            return;
+        }
+        
+        const email = data.email;
+        const attachments = data.attachments || [];
+        
+        let attachmentsHtml = '';
+        if (attachments.length > 0) {
+            attachmentsHtml = '<div class="mt-3"><h6>Attachments:</h6><ul class="list-group">';
+            for (const att of attachments) {
+                attachmentsHtml += `
+                    <li class="list-group-item d-flex justify-content-between align-items-center bg-dark">
+                        <span><i class="bi bi-paperclip me-2"></i>${escapeHtml(att.name)}</span>
+                        <button class="btn btn-sm btn-outline-primary" onclick="downloadAttachment('${emailId}', '${att.id}')">
+                            <i class="bi bi-download"></i>
+                        </button>
+                    </li>
+                `;
+            }
+            attachmentsHtml += '</ul></div>';
+        }
+        
+        const bodyContent = email.body?.content || email.bodyPreview || 'No content';
+        const sanitizedBody = DOMPurify.sanitize(bodyContent);
+        
+        document.getElementById('emailModalTitle').textContent = email.subject || '(No subject)';
+        document.getElementById('emailModalBody').innerHTML = `
+            <div class="mb-3">
+                <strong>From:</strong> ${escapeHtml(email.from?.emailAddress?.name || '')} 
+                &lt;${escapeHtml(email.from?.emailAddress?.address || '')}&gt;
+            </div>
+            <div class="mb-3">
+                <strong>To:</strong> ${email.toRecipients?.map(r => escapeHtml(r.emailAddress?.address)).join(', ') || 'N/A'}
+            </div>
+            <div class="mb-3">
+                <strong>Date:</strong> ${formatTimestamp(email.sentDateTime)}
+            </div>
+            <hr>
+            <div class="email-body p-3 bg-dark rounded" style="max-height: 400px; overflow-y: auto;">
+                ${sanitizedBody}
+            </div>
+            ${attachmentsHtml}
+        `;
+        
+        document.getElementById('downloadEmailBtn').onclick = () => downloadEmail(emailId);
+        
+        const modal = new bootstrap.Modal(document.getElementById('emailModal'));
+        modal.show();
+    } catch (error) {
+        showToast('Error', 'Failed to load email: ' + error.message, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+function downloadEmail(emailId) {
+    window.open(`/api/download_email/${emailId}`, '_blank');
+}
+
+function downloadAttachment(emailId, attachmentId) {
+    window.open(`/api/download_attachment/${emailId}/${attachmentId}`, '_blank');
+}
+
+async function loadDetectors() {
+    try {
+        const response = await fetch('/api/get_detectors');
+        const data = await response.json();
+        
+        const container = document.getElementById('detectorsContainer');
+        
+        if (!data.detectors || data.detectors.length === 0) {
+            container.innerHTML = '<p class="text-muted">No detectors found</p>';
+            return;
+        }
+        
+        let html = '';
+        for (const det of data.detectors) {
+            html += `
+                <div class="col-md-4 mb-2">
+                    <div class="form-check">
+                        <input class="form-check-input detector-check" type="checkbox" 
+                            value="${escapeHtml(det.DetectorName)}" id="det_${det.DetectorName.replace(/\s/g, '_')}">
+                        <label class="form-check-label" for="det_${det.DetectorName.replace(/\s/g, '_')}">
+                            ${escapeHtml(det.DetectorName)}
+                        </label>
+                    </div>
+                </div>
+            `;
+        }
+        
+        container.innerHTML = html;
+        document.getElementById('runDetectorsBtn').disabled = false;
+        
+        document.querySelectorAll('.detector-check').forEach(cb => {
+            cb.addEventListener('change', updateSelectedDetectors);
+        });
+        
+    } catch (error) {
+        showToast('Error', 'Failed to load detectors: ' + error.message, 'error');
+    }
+}
+
+function updateSelectedDetectors() {
+    selectedDetectors = Array.from(document.querySelectorAll('.detector-check:checked'))
+        .map(cb => cb.value);
+}
+
+async function runDetectorScan(type) {
+    if (selectedDetectors.length === 0) {
+        showToast('Warning', 'Please select at least one detector', 'warning');
+        return;
+    }
+    
+    showLoading(`Running ${selectedDetectors.length} detectors on ${type}...`);
+    
+    try {
+        const response = await fetch('/api/scan_with_detectors', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                detectors: selectedDetectors,
+                type: type
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            showToast('Error', data.error, 'error');
+            return;
+        }
+        
+        showToast('Scan Complete', 
+            `Found ${data.items_found} items with ${data.secrets_found} secrets using ${data.detectors_used} detectors`, 
+            data.secrets_found > 0 ? 'warning' : 'success');
+        
+        if (type === 'emails' && data.results) {
+            displayEmailResults(data.results, data.items_found, data.secrets_found);
+        }
+        
+    } catch (error) {
+        showToast('Error', 'Detector scan failed: ' + error.message, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+</script>
+{% endblock %}

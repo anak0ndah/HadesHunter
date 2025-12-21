@@ -1,0 +1,645 @@
+{% extends "layout.html" %}
+
+{% block title %}Files - HadesHunter{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2 class="mb-4"><i class="bi bi-folder-fill me-2"></i>OneDrive & SharePoint Scanner</h2>
+        
+        <!-- Token Configuration -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-key me-2"></i>Microsoft Graph Token</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-8">
+                        <div class="mb-3">
+                            <label class="form-label">Refresh Token (recommended)</label>
+                            <textarea class="form-control token-input" id="refreshToken" rows="3" 
+                                placeholder="Paste your Microsoft refresh token here..."></textarea>
+                            <small class="text-muted">The token will be exchanged for a Graph API access token</small>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <label class="form-label">Tenant (optional)</label>
+                            <input type="text" class="form-control" id="tenant" placeholder="common">
+                        </div>
+                        <button class="btn btn-primary w-100" onclick="configureToken()">
+                            <i class="bi bi-check-circle me-2"></i>Configure Token
+                        </button>
+                    </div>
+                </div>
+                <div id="tokenStatus" class="mt-3" style="display: none;">
+                    <div class="alert alert-success mb-0">
+                        <i class="bi bi-check-circle me-2"></i>
+                        <span id="tokenStatusText">Token configured</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Search Section -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-search me-2"></i>Search Files</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-8">
+                        <div class="mb-3">
+                            <label class="form-label">Search Term (KQL supported)</label>
+                            <input type="text" class="form-control" id="searchTerm" 
+                                placeholder="password filetype:xlsx, credentials, config...">
+                            <small class="text-muted">
+                                Examples: <code>password</code>, <code>filetype:xlsx</code>, 
+                                <code>filetype:config</code>, <code>secret filetype:env</code>
+                            </small>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="mb-3">
+                            <label class="form-label">Max Results</label>
+                            <select class="form-select" id="maxResults">
+                                <option value="25">25</option>
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                                <option value="200">200</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="mb-3">
+                            <label class="form-label">&nbsp;</label>
+                            <button class="btn btn-primary w-100" onclick="searchFiles()">
+                                <i class="bi bi-search me-2"></i>Search
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="scanSecrets" checked>
+                    <label class="form-check-label" for="scanSecrets">
+                        Scan file previews for secrets
+                    </label>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Quick Access -->
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-cloud me-2"></i>OneDrive</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted">Browse your OneDrive files</p>
+                        <button class="btn btn-outline-primary" onclick="browseOneDrive()">
+                            <i class="bi bi-folder-symlink me-2"></i>Browse OneDrive
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-building me-2"></i>SharePoint Sites</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted">View accessible SharePoint sites</p>
+                        <button class="btn btn-outline-primary" onclick="loadSharePointSites()">
+                            <i class="bi bi-list-ul me-2"></i>List Sites
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Detectors Section -->
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-shield-check me-2"></i>GraphRunner Detectors</h5>
+                <button class="btn btn-sm btn-outline-primary" onclick="loadDetectors()">
+                    <i class="bi bi-arrow-clockwise me-1"></i>Load Detectors
+                </button>
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-2">Use pre-configured detection patterns to find sensitive files:</p>
+                <div id="detectorsContainer" class="row">
+                    <p class="text-muted">Click "Load Detectors" to see available patterns</p>
+                </div>
+                <div class="mt-3">
+                    <button class="btn btn-warning" onclick="runDetectorScan()" id="runDetectorsBtn" disabled>
+                        <i class="bi bi-play-fill me-2"></i>Run Selected Detectors
+                    </button>
+                    <button class="btn btn-outline-warning ms-2" onclick="selectAllDetectors()">
+                        Select All
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Results Section -->
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-files me-2"></i>Results</h5>
+                <span class="badge bg-primary" id="resultsCount">0 files</span>
+            </div>
+            <div class="card-body">
+                <div id="fileResults">
+                    <p class="text-muted text-center py-4">Search for files to see results here</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- File Preview Modal -->
+<div class="modal fade" id="fileModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content bg-dark">
+            <div class="modal-header">
+                <h5 class="modal-title" id="fileModalTitle">File Preview</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="fileModalBody">
+                <!-- File preview will be loaded here -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <a href="#" class="btn btn-info" id="openInBrowserBtn" target="_blank">
+                    <i class="bi bi-box-arrow-up-right me-2"></i>Open in Browser
+                </a>
+                <button type="button" class="btn btn-primary" id="downloadFileBtn">
+                    <i class="bi bi-download me-2"></i>Download
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- OneDrive/SharePoint Browser Modal -->
+<div class="modal fade" id="browserModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content bg-dark">
+            <div class="modal-header">
+                <h5 class="modal-title" id="browserModalTitle">Browse Files</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="browserModalBody" style="max-height: 500px; overflow-y: auto;">
+                <!-- Browser content will be loaded here -->
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let selectedDetectors = [];
+let currentFile = null;
+
+async function configureToken() {
+    const refreshToken = document.getElementById('refreshToken').value.trim();
+    const tenant = document.getElementById('tenant').value.trim() || 'common';
+    
+    if (!refreshToken) {
+        showToast('Error', 'Please enter a refresh token', 'error');
+        return;
+    }
+    
+    showLoading('Configuring Graph API token...');
+    
+    try {
+        const response = await fetch('/api/set_graph_token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refresh_token: refreshToken, tenant: tenant })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            document.getElementById('tokenStatus').style.display = 'block';
+            document.getElementById('tokenStatusText').textContent = 
+                `Token configured for ${data.token_info.user}`;
+            showToast('Success', 'Graph API token configured successfully', 'success');
+        } else {
+            showToast('Error', data.error || 'Failed to configure token', 'error');
+        }
+    } catch (error) {
+        showToast('Error', 'Failed to configure token: ' + error.message, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+async function searchFiles() {
+    const searchTerm = document.getElementById('searchTerm').value.trim();
+    const maxResults = document.getElementById('maxResults').value;
+    const scanSecrets = document.getElementById('scanSecrets').checked;
+    
+    if (!searchTerm) {
+        showToast('Error', 'Please enter a search term', 'error');
+        return;
+    }
+    
+    showLoading('Searching files in OneDrive & SharePoint...');
+    
+    try {
+        const response = await fetch('/api/search_files', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                search_term: searchTerm,
+                max_results: parseInt(maxResults),
+                scan_secrets: scanSecrets
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            showToast('Error', data.error, 'error');
+            return;
+        }
+        
+        displayFileResults(data.files, data.total, data.secrets_found);
+        document.getElementById('resultsCount').textContent = `${data.files.length} of ${data.total} files`;
+        
+        if (data.secrets_found > 0) {
+            showToast('Secrets Found', `Found ${data.secrets_found} potential secrets in file previews!`, 'warning');
+        }
+    } catch (error) {
+        showToast('Error', 'Search failed: ' + error.message, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+function displayFileResults(files, total, secretsFound) {
+    const container = document.getElementById('fileResults');
+    
+    if (!files || files.length === 0) {
+        container.innerHTML = '<p class="text-muted text-center py-4">No files found</p>';
+        return;
+    }
+    
+    let html = `
+        <div class="alert alert-info mb-3">
+            <i class="bi bi-info-circle me-2"></i>
+            Found <strong>${total}</strong> files total, showing <strong>${files.length}</strong>.
+            ${secretsFound > 0 ? `<span class="text-danger ms-2"><i class="bi bi-exclamation-triangle"></i> ${secretsFound} secrets detected in previews!</span>` : ''}
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover" id="filesTable">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Size</th>
+                        <th>Modified</th>
+                        <th>Location</th>
+                        <th>Secrets</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+    
+    for (const file of files) {
+        const secretsBadge = file.secrets_found > 0 
+            ? `<span class="badge bg-danger">${file.secrets_found}</span>` 
+            : '<span class="badge bg-secondary">0</span>';
+        
+        const fileIcon = getFileIcon(file.name);
+        const location = file.parent_path ? file.parent_path.split('/').pop() : 'Root';
+        
+        html += `
+            <tr class="${file.secrets_found > 0 ? 'table-danger' : ''}">
+                <td>
+                    <i class="bi ${fileIcon} me-2"></i>
+                    <a href="#" onclick="previewFile('${file.drive_id}', '${file.id}', '${escapeHtml(file.name)}', '${escapeHtml(file.web_url || '')}'); return false;" 
+                       class="text-decoration-none">
+                        ${escapeHtml(file.name)}
+                    </a>
+                    ${file.preview ? `<br><small class="text-muted">${escapeHtml(file.preview.substring(0, 100))}...</small>` : ''}
+                </td>
+                <td><small>${file.size_formatted}</small></td>
+                <td><small>${formatTimestamp(file.modified_date)}</small></td>
+                <td><small class="text-muted">${escapeHtml(location)}</small></td>
+                <td class="text-center">${secretsBadge}</td>
+                <td>
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-primary" 
+                            onclick="previewFile('${file.drive_id}', '${file.id}', '${escapeHtml(file.name)}', '${escapeHtml(file.web_url || '')}')" 
+                            title="Preview">
+                            <i class="bi bi-eye"></i>
+                        </button>
+                        <button class="btn btn-outline-success" 
+                            onclick="downloadFile('${file.drive_id}', '${file.id}')" 
+                            title="Download">
+                            <i class="bi bi-download"></i>
+                        </button>
+                        ${file.web_url ? `
+                        <a href="${file.web_url}" target="_blank" class="btn btn-outline-info" title="Open in Browser">
+                            <i class="bi bi-box-arrow-up-right"></i>
+                        </a>
+                        ` : ''}
+                    </div>
+                </td>
+            </tr>
+        `;
+    }
+    
+    html += '</tbody></table></div>';
+    container.innerHTML = html;
+    
+    $('#filesTable').DataTable({
+        order: [[2, 'desc']],
+        pageLength: 25
+    });
+}
+
+function getFileIcon(filename) {
+    const ext = filename.split('.').pop().toLowerCase();
+    const icons = {
+        'pdf': 'bi-file-pdf text-danger',
+        'doc': 'bi-file-word text-primary',
+        'docx': 'bi-file-word text-primary',
+        'xls': 'bi-file-excel text-success',
+        'xlsx': 'bi-file-excel text-success',
+        'ppt': 'bi-file-ppt text-warning',
+        'pptx': 'bi-file-ppt text-warning',
+        'txt': 'bi-file-text',
+        'csv': 'bi-file-spreadsheet',
+        'json': 'bi-file-code',
+        'xml': 'bi-file-code',
+        'py': 'bi-file-code text-info',
+        'js': 'bi-file-code text-warning',
+        'env': 'bi-file-lock text-danger',
+        'config': 'bi-file-lock text-danger',
+        'key': 'bi-key text-danger',
+        'pem': 'bi-key text-danger',
+        'zip': 'bi-file-zip',
+        'rar': 'bi-file-zip',
+        'jpg': 'bi-file-image',
+        'jpeg': 'bi-file-image',
+        'png': 'bi-file-image',
+        'gif': 'bi-file-image'
+    };
+    return icons[ext] || 'bi-file-earmark';
+}
+
+async function previewFile(driveId, itemId, filename, webUrl) {
+    currentFile = { driveId, itemId, filename, webUrl };
+    showLoading('Loading file preview...');
+    
+    try {
+        const response = await fetch(`/api/get_file_preview/${driveId}/${itemId}`);
+        const data = await response.json();
+        
+        document.getElementById('fileModalTitle').textContent = filename;
+        
+        let previewHtml = '';
+        
+        if (data.thumbnail_url) {
+            previewHtml += `<div class="text-center mb-3"><img src="${data.thumbnail_url}" class="img-fluid rounded" style="max-height: 300px;"></div>`;
+        }
+        
+        if (data.preview) {
+            previewHtml += `
+                <div class="bg-dark p-3 rounded">
+                    <h6>Content Preview:</h6>
+                    <pre class="text-light mb-0" style="white-space: pre-wrap; max-height: 300px; overflow-y: auto;">${escapeHtml(data.preview)}</pre>
+                </div>
+            `;
+        } else {
+            previewHtml += '<p class="text-muted">No text preview available for this file type.</p>';
+        }
+        
+        document.getElementById('fileModalBody').innerHTML = previewHtml;
+        document.getElementById('downloadFileBtn').onclick = () => downloadFile(driveId, itemId);
+        
+        const openBtn = document.getElementById('openInBrowserBtn');
+        if (webUrl) {
+            openBtn.href = webUrl;
+            openBtn.style.display = 'inline-block';
+        } else {
+            openBtn.style.display = 'none';
+        }
+        
+        const modal = new bootstrap.Modal(document.getElementById('fileModal'));
+        modal.show();
+    } catch (error) {
+        showToast('Error', 'Failed to load preview: ' + error.message, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+function downloadFile(driveId, itemId) {
+    window.open(`/api/download_file/${driveId}/${itemId}`, '_blank');
+}
+
+async function browseOneDrive() {
+    showLoading('Loading OneDrive...');
+    
+    try {
+        const response = await fetch('/api/get_onedrive');
+        const data = await response.json();
+        
+        if (data.error) {
+            showToast('Error', data.error, 'error');
+            return;
+        }
+        
+        displayBrowserContent('OneDrive', data.items);
+    } catch (error) {
+        showToast('Error', 'Failed to load OneDrive: ' + error.message, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+async function loadSharePointSites() {
+    showLoading('Loading SharePoint sites...');
+    
+    try {
+        const response = await fetch('/api/get_sharepoint_sites');
+        const data = await response.json();
+        
+        if (data.error) {
+            showToast('Error', data.error, 'error');
+            return;
+        }
+        
+        let html = '<div class="list-group">';
+        for (const site of data.sites) {
+            html += `
+                <a href="${site.webUrl}" target="_blank" class="list-group-item list-group-item-action bg-dark text-light">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <i class="bi bi-building me-2"></i>
+                            <strong>${escapeHtml(site.displayName || site.name)}</strong>
+                            <br><small class="text-muted">${escapeHtml(site.webUrl)}</small>
+                        </div>
+                        <i class="bi bi-box-arrow-up-right"></i>
+                    </div>
+                </a>
+            `;
+        }
+        html += '</div>';
+        
+        document.getElementById('browserModalTitle').textContent = 'SharePoint Sites';
+        document.getElementById('browserModalBody').innerHTML = html;
+        
+        const modal = new bootstrap.Modal(document.getElementById('browserModal'));
+        modal.show();
+    } catch (error) {
+        showToast('Error', 'Failed to load SharePoint sites: ' + error.message, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+function displayBrowserContent(title, items) {
+    let html = '<div class="list-group">';
+    
+    for (const item of items) {
+        const isFolder = item.folder !== undefined;
+        const icon = isFolder ? 'bi-folder-fill text-warning' : getFileIcon(item.name);
+        const size = item.size ? `(${formatSize(item.size)})` : '';
+        
+        html += `
+            <div class="list-group-item list-group-item-action bg-dark text-light d-flex justify-content-between align-items-center">
+                <div>
+                    <i class="bi ${icon} me-2"></i>
+                    ${escapeHtml(item.name)} <small class="text-muted">${size}</small>
+                </div>
+                ${!isFolder ? `
+                <div class="btn-group btn-group-sm">
+                    <button class="btn btn-outline-primary" onclick="previewFile('${item.parentReference?.driveId}', '${item.id}', '${escapeHtml(item.name)}', '${item.webUrl || ''}')">
+                        <i class="bi bi-eye"></i>
+                    </button>
+                    <button class="btn btn-outline-success" onclick="downloadFile('${item.parentReference?.driveId}', '${item.id}')">
+                        <i class="bi bi-download"></i>
+                    </button>
+                </div>
+                ` : ''}
+            </div>
+        `;
+    }
+    html += '</div>';
+    
+    document.getElementById('browserModalTitle').textContent = title;
+    document.getElementById('browserModalBody').innerHTML = html;
+    
+    const modal = new bootstrap.Modal(document.getElementById('browserModal'));
+    modal.show();
+}
+
+function formatSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
+    return (bytes / 1073741824).toFixed(1) + ' GB';
+}
+
+async function loadDetectors() {
+    try {
+        const response = await fetch('/api/get_detectors');
+        const data = await response.json();
+        
+        const container = document.getElementById('detectorsContainer');
+        
+        if (!data.detectors || data.detectors.length === 0) {
+            container.innerHTML = '<p class="text-muted">No detectors found</p>';
+            return;
+        }
+        
+        let html = '';
+        for (const det of data.detectors) {
+            html += `
+                <div class="col-md-4 mb-2">
+                    <div class="form-check">
+                        <input class="form-check-input detector-check" type="checkbox" 
+                            value="${escapeHtml(det.DetectorName)}" id="det_${det.DetectorName.replace(/\s/g, '_')}">
+                        <label class="form-check-label" for="det_${det.DetectorName.replace(/\s/g, '_')}">
+                            ${escapeHtml(det.DetectorName)}
+                        </label>
+                    </div>
+                </div>
+            `;
+        }
+        
+        container.innerHTML = html;
+        document.getElementById('runDetectorsBtn').disabled = false;
+        
+        document.querySelectorAll('.detector-check').forEach(cb => {
+            cb.addEventListener('change', updateSelectedDetectors);
+        });
+        
+        showToast('Success', `Loaded ${data.detectors.length} detectors`, 'success');
+    } catch (error) {
+        showToast('Error', 'Failed to load detectors: ' + error.message, 'error');
+    }
+}
+
+function selectAllDetectors() {
+    document.querySelectorAll('.detector-check').forEach(cb => {
+        cb.checked = true;
+    });
+    updateSelectedDetectors();
+}
+
+function updateSelectedDetectors() {
+    selectedDetectors = Array.from(document.querySelectorAll('.detector-check:checked'))
+        .map(cb => cb.value);
+}
+
+async function runDetectorScan() {
+    if (selectedDetectors.length === 0) {
+        showToast('Warning', 'Please select at least one detector', 'warning');
+        return;
+    }
+    
+    showLoading(`Running ${selectedDetectors.length} detectors on files...`);
+    
+    try {
+        const response = await fetch('/api/scan_with_detectors', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                detectors: selectedDetectors,
+                type: 'files'
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            showToast('Error', data.error, 'error');
+            return;
+        }
+        
+        showToast('Scan Complete', 
+            `Found ${data.items_found} files with ${data.secrets_found} secrets using ${data.detectors_used} detectors`, 
+            data.secrets_found > 0 ? 'warning' : 'success');
+        
+        if (data.results) {
+            displayFileResults(data.results, data.items_found, data.secrets_found);
+            document.getElementById('resultsCount').textContent = `${data.results.length} files`;
+        }
+        
+    } catch (error) {
+        showToast('Error', 'Detector scan failed: ' + error.message, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+</script>
+{% endblock %}

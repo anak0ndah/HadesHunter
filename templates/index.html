@@ -3,432 +3,167 @@
 {% block title %}HadesHunter - Home{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-12">
-        <h1 class="mb-4">
-            <i class="bi bi-shield-lock text-primary me-2"></i>
+<div class="row mb-5">
+    <div class="col-12 text-center py-4">
+        <h1 class="display-4 mb-3">
+            <i class="bi bi-shield-lock text-danger me-2"></i>
             HadesHunter
         </h1>
-        <p class="text-muted mb-4">
-            Security scanner for Microsoft Teams conversations. Detects API keys, passwords, tokens, and credentials.
+        <p class="lead text-muted mb-4">
+            Advanced Secret Detection for Microsoft 365 Environments
         </p>
+        <div class="d-flex justify-content-center gap-3 flex-wrap">
+            <a href="/terminator" class="btn btn-danger btn-lg">
+                <i class="bi bi-lightning-charge-fill me-2"></i>Terminator (All-in-One)
+            </a>
+            <a href="/teams" class="btn btn-outline-primary btn-lg">
+                <i class="bi bi-microsoft-teams me-2"></i>Teams
+            </a>
+            <a href="/emails" class="btn btn-outline-info btn-lg">
+                <i class="bi bi-microsoft me-2"></i>Emails
+            </a>
+            <a href="/files" class="btn btn-outline-success btn-lg">
+                <i class="bi bi-share-fill me-2"></i>Files
+            </a>
+        </div>
     </div>
 </div>
 
-<!-- Token Configuration -->
-<div class="row mb-4">
+<div class="row mb-5">
     <div class="col-12">
-        <div class="card">
+        <div class="card bg-dark border-secondary">
             <div class="card-header">
-                <h5 class="mb-0"><i class="bi bi-key me-2"></i>Authentication</h5>
+                <h4 class="mb-0"><i class="bi bi-info-circle me-2"></i>What is HadesHunter?</h4>
             </div>
             <div class="card-body">
-                <p class="text-muted small mb-3">
-                    <i class="bi bi-info-circle me-1"></i>
-                    Paste a <strong>Refresh Token</strong> to auto-generate Teams token, 
-                    or a <strong>Teams Access Token</strong> directly.
+                <p>
+                    <strong>HadesHunter</strong> is a security tool designed to detect secrets, credentials, and sensitive data 
+                    leaked in Microsoft 365 environments. It scans <strong>Teams conversations</strong>, <strong>Outlook emails</strong>, 
+                    and <strong>OneDrive/SharePoint files</strong> for potential security risks.
                 </p>
-                
-                <ul class="nav nav-tabs mb-3" id="tokenTabs" role="tablist">
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link active" id="refresh-tab" data-bs-toggle="tab" data-bs-target="#refresh-pane" type="button">
-                            <i class="bi bi-arrow-repeat me-1"></i>Refresh Token (Recommended)
-                        </button>
-                    </li>
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="access-tab" data-bs-toggle="tab" data-bs-target="#access-pane" type="button">
-                            <i class="bi bi-key me-1"></i>Access Token
-                        </button>
-                    </li>
-                </ul>
-                
-                <div class="tab-content" id="tokenTabsContent">
-                    <!-- Refresh Token Tab -->
-                    <div class="tab-pane fade show active" id="refresh-pane" role="tabpanel">
-                        <div class="mb-3">
-                            <label for="refreshToken" class="form-label">Refresh Token</label>
-                            <textarea class="form-control token-input" id="refreshToken" rows="3" 
-                                      placeholder="1.AXXX... or 0.AXXX..."></textarea>
-                            <div class="form-text">Teams token will be generated automatically</div>
-                        </div>
-                        <button class="btn btn-primary" onclick="useRefreshToken()">
-                            <i class="bi bi-lightning me-1"></i>Connect
-                        </button>
-                    </div>
-                    
-                    <!-- Access Token Tab -->
-                    <div class="tab-pane fade" id="access-pane" role="tabpanel">
-                        <div class="mb-3">
-                            <label for="accessToken" class="form-label">Access Token (Teams API or any Microsoft token)</label>
-                            <textarea class="form-control token-input" id="accessToken" rows="3" 
-                                      placeholder="eyJ0eXAiOiJKV1QiLCJub25jZSI6..."></textarea>
-                            <div class="form-text">Will auto-convert to Teams token if needed</div>
-                        </div>
-                        <button class="btn btn-outline-primary" onclick="setAccessToken()">
-                            <i class="bi bi-check-circle me-1"></i>Use Access Token
-                        </button>
-                    </div>
-                </div>
-                
-                <div id="tokenInfo" class="mt-3" style="display: none;">
-                    <div class="alert alert-success mb-0">
-                        <i class="bi bi-check-circle me-2"></i>
-                        <span id="tokenInfoText"></span>
-                    </div>
-                </div>
+                <p class="mb-0">
+                    <strong>Inspired by:</strong> 
+                    <a href="https://github.com/dafthack/GraphRunner" target="_blank" class="text-info">GraphRunner</a>, 
+                    <a href="https://github.com/RedByte1337/GraphSpy" target="_blank" class="text-info">GraphSpy</a>, 
+                    and <a href="https://github.com/trufflesecurity/trufflehog" target="_blank" class="text-info">TruffleHog</a>.
+                </p>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Scan Options -->
-<div class="row mb-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0"><i class="bi bi-search me-2"></i>Scan Options</h5>
-                <button class="btn btn-danger" onclick="scanAllConversations()" id="scanAllBtn" disabled>
-                    <i class="bi bi-play-fill me-1"></i>Scan All Conversations
-                </button>
+<div class="row mb-5">
+    <div class="col-md-4 mb-3">
+        <div class="card h-100 bg-dark border-primary">
+            <div class="card-body text-center">
+                <i class="bi bi-microsoft-teams text-primary" style="font-size: 3rem;"></i>
+                <h5 class="mt-3">Teams Scanner</h5>
+                <p class="text-muted small">Scan all Teams conversations and chats for leaked credentials and secrets.</p>
             </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-8">
-                        <h6>Conversations</h6>
-                        <div class="conversation-list list-group" id="conversationList">
-                            <div class="text-center text-muted py-4">
-                                <i class="bi bi-chat-dots" style="font-size: 2rem;"></i>
-                                <p class="mt-2">Configure a token to load conversations</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <h6>Quick Scan</h6>
-                        <p class="text-muted small">Select a conversation and click scan to check for secrets.</p>
-                        <button class="btn btn-outline-primary w-100 mb-2" onclick="scanSelectedConversation()" id="scanSelectedBtn" disabled>
-                            <i class="bi bi-search me-1"></i>Scan Selected
-                        </button>
-                        <button class="btn btn-outline-secondary w-100" onclick="loadConversations()" id="loadConvBtn" disabled>
-                            <i class="bi bi-arrow-clockwise me-1"></i>Reload Conversations
-                        </button>
-                    </div>
-                </div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-3">
+        <div class="card h-100 bg-dark border-info">
+            <div class="card-body text-center">
+                <i class="bi bi-envelope-fill text-info" style="font-size: 3rem;"></i>
+                <h5 class="mt-3">Email Scanner</h5>
+                <p class="text-muted small">Analyze inbox emails for passwords, API keys, and sensitive information.</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-3">
+        <div class="card h-100 bg-dark border-success">
+            <div class="card-body text-center">
+                <i class="bi bi-folder-fill text-success" style="font-size: 3rem;"></i>
+                <h5 class="mt-3">File Scanner</h5>
+                <p class="text-muted small">Scan OneDrive and SharePoint files for hardcoded secrets and credentials.</p>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Detection Patterns Info -->
-<div class="row">
+<div class="row mb-5">
     <div class="col-12">
-        <div class="card">
+        <div class="card bg-dark border-warning">
             <div class="card-header">
-                <h5 class="mb-0"><i class="bi bi-info-circle me-2"></i>Detection Patterns</h5>
+                <h4 class="mb-0"><i class="bi bi-shield-check me-2 text-warning"></i>Detection Patterns (30+)</h4>
             </div>
             <div class="card-body">
                 <div class="row">
                     <div class="col-md-4">
-                        <h6 class="text-primary"><i class="bi bi-cloud me-1"></i>Cloud Providers</h6>
+                        <h6 class="text-warning">Cloud Providers</h6>
                         <ul class="small">
-                            <li>AWS Access Keys & Secrets</li>
+                            <li>AWS Access Keys & Secret Keys</li>
                             <li>Azure Client Secrets</li>
                             <li>Azure Connection Strings</li>
                             <li>Google API Keys</li>
                         </ul>
                     </div>
                     <div class="col-md-4">
-                        <h6 class="text-primary"><i class="bi bi-code-slash me-1"></i>API & Tokens</h6>
+                        <h6 class="text-warning">API & Tokens</h6>
                         <ul class="small">
                             <li>GitHub Tokens (ghp_, gho_, etc.)</li>
                             <li>Slack Tokens & Webhooks</li>
-                            <li>Discord Tokens & Webhooks</li>
+                            <li>Discord Tokens</li>
+                            <li>OpenAI API Keys</li>
+                            <li>Stripe, SendGrid, Twilio Keys</li>
                             <li>JWT Tokens</li>
-                            <li>OpenAI, Stripe, SendGrid, Twilio</li>
+                            <li>Bearer & Basic Auth</li>
                         </ul>
                     </div>
                     <div class="col-md-4">
-                        <h6 class="text-primary"><i class="bi bi-chat-text me-1"></i>Conversation Patterns</h6>
+                        <h6 class="text-warning">Credentials</h6>
                         <ul class="small">
-                            <li>Password exchanges (8 languages)</li>
-                            <li>Username/Password pairs</li>
-                            <li>Credential sharing patterns</li>
-                            <li>Generic secrets with keywords</li>
+                            <li>Password patterns (EN, FR, ES, DE, PL, PT, IT, NL)</li>
+                            <li>Email:Password combinations</li>
+                            <li>Database URLs & Connection Strings</li>
+                            <li>Private Keys (RSA, SSH, PGP)</li>
+                            <li>Generic API Keys & Secrets</li>
                         </ul>
                     </div>
                 </div>
-                <hr>
-                <p class="text-muted small mb-0">
-                    <i class="bi bi-lightbulb me-1"></i>
-                    Detection uses Shannon entropy analysis, keyword proximity matching, and regex patterns inspired by TruffleHog.
-                </p>
             </div>
         </div>
     </div>
 </div>
-{% endblock %}
 
-{% block extra_js %}
-<script>
-    let selectedConversation = null;
-    let tokenConfigured = false;
-    
-    async function setAccessToken() {
-        const token = document.getElementById("accessToken").value.trim();
-        if (!token) {
-            showToast("Error", "Please enter an access token", "error");
-            return;
-        }
-        
-        showLoading("Validating token...");
-        
-        try {
-            const response = await fetch("/api/set_token", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ access_token: token })
-            });
-            
-            const data = await response.json();
-            
-            if (data.error) {
-                showToast("Error", data.error, "error");
-                return;
-            }
-            
-            tokenConfigured = true;
-            document.getElementById("tokenInfo").style.display = "block";
-            document.getElementById("tokenInfoText").innerHTML = 
-                `<strong>Connected:</strong> ${data.token_info.user}<br>
-                 <small class="text-muted">Tenant: ${data.token_info.tenant_id || 'N/A'}</small>`;
-            
-            enableButtons();
-            showToast("Success", "Token configured successfully", "success");
-            loadConversations();
-            
-        } catch (error) {
-            showToast("Error", "Failed to set token: " + error.message, "error");
-        } finally {
-            hideLoading();
-        }
-    }
-    
-    async function useRefreshToken() {
-        const refreshToken = document.getElementById("refreshToken").value.trim();
-        
-        if (!refreshToken) {
-            showToast("Error", "Please enter a refresh token", "error");
-            return;
-        }
-        
-        showLoading("Generating Teams token...");
-        
-        try {
-            const response = await fetch("/api/refresh_token", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ refresh_token: refreshToken })
-            });
-            
-            const data = await response.json();
-            
-            if (data.error) {
-                showToast("Error", data.error, "error");
-                return;
-            }
-            
-            tokenConfigured = true;
-            document.getElementById("tokenInfo").style.display = "block";
-            document.getElementById("tokenInfoText").innerHTML = 
-                `<strong>Connected:</strong> ${data.token_info.user}<br>
-                 <small class="text-muted">Tenant: ${data.token_info.tenant_id || 'N/A'}</small>`;
-            
-            enableButtons();
-            showToast("Success", data.message || "Teams token generated", "success");
-            loadConversations();
-            
-        } catch (error) {
-            showToast("Error", "Failed: " + error.message, "error");
-        } finally {
-            hideLoading();
-        }
-    }
-    
-    async function refreshAccessToken() {
-        return useRefreshToken();
-    }
-    
-    function enableButtons() {
-        document.getElementById("scanAllBtn").disabled = false;
-        document.getElementById("loadConvBtn").disabled = false;
-    }
-    
-    async function loadConversations() {
-        if (!tokenConfigured) {
-            showToast("Error", "Please configure a token first", "error");
-            return;
-        }
-        
-        showLoading("Loading conversations...");
-        
-        try {
-            const response = await fetch("/api/get_conversations");
-            const data = await response.json();
-            
-            if (data.error) {
-                showToast("Error", data.error, "error");
-                return;
-            }
-            
-            const listEl = document.getElementById("conversationList");
-            listEl.innerHTML = "";
-            
-            if (data.conversations.length === 0) {
-                listEl.innerHTML = '<div class="text-center text-muted py-4">No conversations found</div>';
-                return;
-            }
-            
-            data.conversations.forEach(conv => {
-                if (conv.is_empty) return;
-                
-                const item = document.createElement("a");
-                item.href = "#";
-                item.className = "list-group-item list-group-item-action conversation-item";
-                item.innerHTML = `
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <strong>${escapeHtml(conv.name)}</strong>
-                            <br>
-                            <small class="text-muted">${conv.type}</small>
-                        </div>
-                        <small class="text-muted">${formatTimestamp(conv.last_message_time)}</small>
+<div class="row mb-5">
+    <div class="col-12">
+        <div class="card bg-dark border-secondary">
+            <div class="card-header">
+                <h4 class="mb-0"><i class="bi bi-question-circle me-2"></i>How to Use</h4>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>1. Get a Refresh Token</h6>
+                        <p class="small text-muted">
+                            Use tools like <code>roadrecon</code>, <code>TokenTacticsV2</code>, or device code phishing 
+                            to obtain a Microsoft refresh token.
+                        </p>
+                        
+                        <h6>2. Choose Your Scanner</h6>
+                        <p class="small text-muted">
+                            <strong>Terminator</strong> (recommended): Scans Teams, Emails, and Files in one go.<br>
+                            Or use individual scanners for specific sources.
+                        </p>
                     </div>
-                `;
-                item.dataset.conversationId = conv.id;
-                item.dataset.messagesLink = conv.messages_link;
-                item.dataset.name = conv.name;
-                
-                item.addEventListener("click", (e) => {
-                    e.preventDefault();
-                    document.querySelectorAll(".conversation-item").forEach(el => el.classList.remove("active"));
-                    item.classList.add("active");
-                    selectedConversation = {
-                        id: conv.id,
-                        messages_link: conv.messages_link,
-                        name: conv.name
-                    };
-                    document.getElementById("scanSelectedBtn").disabled = false;
-                });
-                
-                listEl.appendChild(item);
-            });
-            
-            showToast("Success", `Loaded ${data.conversations.length} conversations`, "success");
-            
-        } catch (error) {
-            showToast("Error", "Failed to load conversations: " + error.message, "error");
-        } finally {
-            hideLoading();
-        }
-    }
-    
-    async function scanSelectedConversation() {
-        if (!selectedConversation) {
-            showToast("Error", "Please select a conversation first", "error");
-            return;
-        }
-        
-        showLoading(`Scanning "${selectedConversation.name}"...`);
-        
-        try {
-            const response = await fetch("/api/scan_conversation", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    messages_link: selectedConversation.messages_link,
-                    conversation_id: selectedConversation.id
-                })
-            });
-            
-            const data = await response.json();
-            
-            if (data.error) {
-                showToast("Error", data.error, "error");
-                return;
-            }
-            
-            if (data.secrets_found > 0) {
-                showToast("Warning", `Found ${data.secrets_found} potential secrets in ${data.messages_scanned} messages!`, "warning");
-            } else {
-                showToast("Success", `Scanned ${data.messages_scanned} messages - No secrets found`, "success");
-            }
-            
-            // Redirect to results if secrets found
-            if (data.secrets_found > 0) {
-                window.location.href = "/results";
-            }
-            
-        } catch (error) {
-            showToast("Error", "Failed to scan conversation: " + error.message, "error");
-        } finally {
-            hideLoading();
-        }
-    }
-    
-    async function scanAllConversations() {
-        if (!tokenConfigured) {
-            showToast("Error", "Please configure a token first", "error");
-            return;
-        }
-        
-        let page = 0;
-        let isComplete = false;
-        let totalSecrets = 0;
-        let totalMessages = 0;
-        let totalConversations = 0;
-        
-        showLoading("Starting scan...");
-        
-        try {
-            while (!isComplete) {
-                const response = await fetch("/api/scan_all", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ page: page })
-                });
-                
-                const data = await response.json();
-                
-                if (data.error) {
-                    showToast("Error", data.error, "error");
-                    return;
-                }
-                
-                totalSecrets += data.secrets_in_page || 0;
-                totalMessages += data.messages_in_page || 0;
-                totalConversations = data.total_conversations || 0;
-                isComplete = data.is_complete;
-                
-                // Update loading text with progress
-                document.getElementById("loadingText").textContent = 
-                    `Scanning... ${data.progress_percent}% (${page + 1}/${data.total_pages} pages, ${totalSecrets} secrets found)`;
-                
-                page++;
-            }
-            
-            showToast(
-                totalSecrets > 0 ? "Warning" : "Success",
-                `Scanned ${totalConversations} conversations (${totalMessages} messages). Found ${totalSecrets} potential secrets.`,
-                totalSecrets > 0 ? "warning" : "success"
-            );
-            
-            // Redirect to results
-            window.location.href = "/results";
-            
-        } catch (error) {
-            showToast("Error", "Failed to scan: " + error.message, "error");
-        } finally {
-            hideLoading();
-        }
-    }
-</script>
+                    <div class="col-md-6">
+                        <h6>3. Configure & Scan</h6>
+                        <p class="small text-muted">
+                            Paste your refresh token, select the number of items to scan, and click Scan.
+                        </p>
+                        
+                        <h6>4. Review Results</h6>
+                        <p class="small text-muted">
+                            View detected secrets with context, confidence scores, and entropy analysis. 
+                            Export or delete results as needed.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% endblock %}

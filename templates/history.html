@@ -156,7 +156,7 @@
         }
         
         try {
-            const response = await fetch(`/api/delete_scan/${scanId}`, {
+            const response = await fetch('/api/delete_scan/' + scanId, {
                 method: "DELETE"
             });
             

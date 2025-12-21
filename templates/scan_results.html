@@ -11,6 +11,9 @@
                 Scan Results
             </h1>
             <div>
+                <button class="btn btn-outline-danger me-2" onclick="clearAllResults()">
+                    <i class="bi bi-trash me-1"></i>Clear All
+                </button>
                 <button class="btn btn-outline-success me-2" onclick="exportResults()">
                     <i class="bi bi-download me-1"></i>Export Secrets
                 </button>
@@ -56,13 +59,22 @@
         <div class="card">
             <div class="card-body">
                 <div class="row align-items-center">
-                    <div class="col-md-4">
+                    <div class="col-md-3">
                         <label class="form-label">Filter by Type</label>
                         <select class="form-select" id="filterType" onchange="filterResults()">
                             <option value="">All Types</option>
                         </select>
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-3">
+                        <label class="form-label">Filter by Source</label>
+                        <select class="form-select" id="filterSource" onchange="filterResults()">
+                            <option value="">All Sources</option>
+                            <option value="teams">Teams</option>
+                            <option value="email">Emails</option>
+                            <option value="file">Files</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
                         <label class="form-label">Min Confidence</label>
                         <select class="form-select" id="filterConfidence" onchange="filterResults()">
                             <option value="0">All</option>
@@ -72,7 +84,7 @@
                             <option value="0.9">90%+</option>
                         </select>
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-3">
                         <label class="form-label">Search</label>
                         <input type="text" class="form-control" id="searchInput" placeholder="Search in results..." oninput="filterResults()">
                     </div>
@@ -123,6 +135,7 @@
 {% block extra_js %}
 <script>
     let allResults = [];
+    let currentScanId = null;
     
     document.addEventListener("DOMContentLoaded", loadResults);
     
@@ -132,6 +145,7 @@
             const data = await response.json();
             
             allResults = data.secrets || [];
+            currentScanId = data.scan_id;
             
             // Update stats
             document.getElementById("secretsCount").textContent = allResults.length;
@@ -170,6 +184,7 @@
     
     function filterResults() {
         const typeFilter = document.getElementById("filterType").value;
+        const sourceFilter = document.getElementById("filterSource").value;
         const confidenceFilter = parseFloat(document.getElementById("filterConfidence").value);
         const searchFilter = document.getElementById("searchInput").value.toLowerCase();
         
@@ -177,6 +192,10 @@
         
         if (typeFilter) {
             filtered = filtered.filter(s => s.type === typeFilter);
+        }
+        
+        if (sourceFilter) {
+            filtered = filtered.filter(s => getSource(s) === sourceFilter);
         }
         
         if (confidenceFilter > 0) {
@@ -193,6 +212,22 @@
         }
         
         renderResults(filtered);
+    }
+    
+    function getSource(secret) {
+        if (secret.extra_data && secret.extra_data.source) {
+            return secret.extra_data.source;
+        }
+        if (secret.conversation_id === 'email') return 'email';
+        if (secret.sender === 'file') return 'file';
+        return 'teams';
+    }
+    
+    function getSourceBadge(secret) {
+        const source = getSource(secret);
+        if (source === 'email') return '<span class="badge bg-info"><i class="bi bi-envelope me-1"></i>Email</span>';
+        if (source === 'file') return '<span class="badge bg-success"><i class="bi bi-file-earmark me-1"></i>File</span>';
+        return '<span class="badge bg-primary"><i class="bi bi-microsoft-teams me-1"></i>Teams</span>';
     }
     
     function renderResults(results) {
@@ -221,7 +256,8 @@
                         <div class="row">
                             <div class="col-md-8">
                                 <div class="d-flex align-items-center mb-2">
-                                    <span class="badge badge-secret-type me-2">${escapeHtml(secret.type)}</span>
+                                    ${getSourceBadge(secret)}
+                                    <span class="badge badge-secret-type ms-2 me-2">${escapeHtml(secret.type)}</span>
                                     <span class="badge bg-${confidenceClass === 'high' ? 'danger' : confidenceClass === 'medium' ? 'warning' : 'success'}">
                                         ${confidencePercent}% confidence
                                     </span>
@@ -261,9 +297,13 @@
                             </div>
                             
                             <div class="col-md-4 text-end">
-                                <button class="btn btn-outline-primary btn-sm" 
+                                <button class="btn btn-outline-primary btn-sm me-1" 
                                         onclick="showContext('${secret.conversation_id}', '${secret.message_id}')">
                                     <i class="bi bi-chat-text me-1"></i>View Context
+                                </button>
+                                <button class="btn btn-outline-danger btn-sm" 
+                                        onclick="deleteResult(${secret.id}, this)">
+                                    <i class="bi bi-trash"></i>
                                 </button>
                             </div>
                         </div>
@@ -356,6 +396,50 @@
             
         } catch (error) {
             showToast("Error", "Failed to export results: " + error.message, "error");
+        }
+    }
+    
+    async function deleteResult(secretId, btn) {
+        if (!confirm('Delete this result?')) return;
+        
+        try {
+            const response = await fetch('/api/delete_secret/' + secretId, { method: 'DELETE' });
+            const data = await response.json();
+            
+            if (data.success) {
+                // Remove from local array and re-render (use == for type coercion)
+                allResults = allResults.filter(s => s.id != secretId);
+                filterResults();
+                document.getElementById("secretsCount").textContent = allResults.length;
+                showToast("Success", "Result deleted from database", "success");
+            } else {
+                showToast("Error", data.error || "Failed to delete", "error");
+            }
+        } catch (error) {
+            showToast("Error", "Failed to delete: " + error.message, "error");
+        }
+    }
+    
+    async function clearAllResults() {
+        if (!confirm('Delete this scan and ALL its data? This cannot be undone.')) return;
+        
+        try {
+            let url = '/api/clear_all_secrets';
+            if (currentScanId) {
+                url += '?scan_id=' + currentScanId;
+            }
+            const response = await fetch(url, { method: 'DELETE' });
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast("Success", "Scan deleted from database", "success");
+                // Redirect to history after deletion
+                setTimeout(() => { window.location.href = '/history'; }, 1000);
+            } else {
+                showToast("Error", data.error || "Failed to clear", "error");
+            }
+        } catch (error) {
+            showToast("Error", "Failed to clear: " + error.message, "error");
         }
     }
 </script>

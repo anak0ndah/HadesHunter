@@ -184,7 +184,8 @@ class SecretDetector:
             (r'(?i)(?:user(?:name)?|login|identifiant|usuario|benutzer|uzytkownik)\s*[:=]\s*["\']?([^\s"\'<>]+)["\']?\s*[/\-,;]\s*(?:password|passwd|pwd|mdp|haslo|senha|contrasena)\s*[:=]\s*["\']?([^\s"\'<>]+)["\']?', 0.9),
             (r'(?i)(?:login|user)\s*[:=]\s*([^\s,;]+)\s*[,;]\s*(?:pass|pwd)\s*[:=]\s*([^\s,;]+)', 0.85),
             (r'(?i)(?:compte|account|konto|cuenta)\s*[:=]?\s*([^\s,;]+)\s*[,;/\-]?\s*(?:mot de passe|password|mdp|haslo|senha)\s*[:=]?\s*([^\s,;]+)', 0.85),
-            (r'(?i)([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+)\s*[/\-:]\s*([^\s<>"\']{4,})', 0.75),
+            # Email:password - require explicit colon separator (not dash which is valid in domains)
+            (r'(?i)([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})\s*:\s*([^\s<>"\']{6,})', 0.75),
         ],
         SecretType.GENERIC_SECRET: [
             (r'(?i)(?:secret|password|passwd|pwd|mdp|haslo|senha)["\']?\s*[:=]\s*["\']?([^\s"\'<>]{6,64})["\']?', 0.65),
@@ -282,6 +283,27 @@ class SecretDetector:
                 return True
         
         if len(set(value_lower)) <= 2:
+            return True
+        
+        # Filter out email addresses
+        if re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', value):
+            return True
+        
+        # Filter out values that look like email:password but email part is dominant
+        if '@' in value and ':' in value:
+            parts = value.split(':')
+            if len(parts) == 2 and '@' in parts[0] and re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', parts[0]):
+                # Check if password part is too simple
+                pwd = parts[1]
+                if len(pwd) < 6 or pwd.isalpha() or pwd.isdigit():
+                    return True
+        
+        # Filter out domain names
+        if re.match(r'^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', value) and '@' not in value:
+            return True
+        
+        # Filter out URLs without credentials
+        if re.match(r'^https?://[a-zA-Z0-9.-]+', value) and ':' not in value.split('//')[1].split('/')[0]:
             return True
         
         return False
@@ -524,6 +546,145 @@ class SecretDetector:
             all_results.extend(results)
         
         return all_results
+    
+    def scan_email_text(self, text: str, message_id: str = "", conversation_id: str = "",
+                        sender: str = "", timestamp: str = "") -> List[SecretMatch]:
+        """Scanne un email pour détecter des secrets - sans filtrage Teams."""
+        results: List[SecretMatch] = []
+        
+        if not text or len(text.strip()) < 5:
+            return results
+        
+        # Clean HTML but don't filter as Teams system message
+        clean_text = self.clean_html(text)
+        
+        if not clean_text or len(clean_text) < 5:
+            return results
+        
+        seen_secrets = set()
+        
+        # Scan with all patterns
+        for secret_type, patterns in self.compiled_patterns.items():
+            for pattern, base_confidence in patterns:
+                for match in pattern.finditer(clean_text):
+                    secret_value = match.group(1) if match.lastindex else match.group(0)
+                    
+                    if secret_value in seen_secrets:
+                        continue
+                    
+                    if self.is_false_positive(secret_value):
+                        continue
+                    
+                    entropy = self.calculate_shannon_entropy(secret_value)
+                    
+                    confidence = base_confidence
+                    if entropy < self.MIN_ENTROPY_GENERIC:
+                        confidence *= 0.6
+                    elif entropy > 4.5:
+                        confidence = min(1.0, confidence * 1.15)
+                    
+                    if self.has_keyword_nearby(clean_text, match.start()):
+                        confidence = min(1.0, confidence * 1.1)
+                    
+                    if confidence < 0.5:
+                        continue
+                    
+                    context_before, context_after = self.get_context(clean_text, match.start(), match.end())
+                    
+                    seen_secrets.add(secret_value)
+                    results.append(SecretMatch(
+                        secret_type=secret_type,
+                        raw_value=secret_value,
+                        redacted_value=self.redact_secret(secret_value),
+                        confidence=round(confidence, 2),
+                        entropy=round(entropy, 2),
+                        context_before=context_before,
+                        context_after=context_after,
+                        message_id=message_id,
+                        conversation_id=conversation_id,
+                        sender=sender,
+                        timestamp=timestamp,
+                        message_content=clean_text[:500],
+                    ))
+        
+        # Also scan conversation patterns
+        for secret_type, patterns in self.compiled_conversation_patterns.items():
+            for pattern, base_confidence in patterns:
+                for match in pattern.finditer(clean_text):
+                    if secret_type == SecretType.CREDENTIAL_EXCHANGE and match.lastindex and match.lastindex >= 2:
+                        username = match.group(1)
+                        password = match.group(2)
+                        combined = f"{username}:{password}"
+                        
+                        if combined in seen_secrets:
+                            continue
+                        
+                        if self.is_false_positive(password):
+                            continue
+                        
+                        entropy = self.calculate_shannon_entropy(password)
+                        confidence = base_confidence
+                        
+                        if entropy < 2.5:
+                            confidence *= 0.5
+                        
+                        if confidence < 0.5:
+                            continue
+                        
+                        context_before, context_after = self.get_context(clean_text, match.start(), match.end())
+                        
+                        seen_secrets.add(combined)
+                        results.append(SecretMatch(
+                            secret_type=secret_type,
+                            raw_value=combined,
+                            redacted_value=f"{username}:{self.redact_secret(password)}",
+                            confidence=round(confidence, 2),
+                            entropy=round(entropy, 2),
+                            context_before=context_before,
+                            context_after=context_after,
+                            message_id=message_id,
+                            conversation_id=conversation_id,
+                            sender=sender,
+                            timestamp=timestamp,
+                            message_content=clean_text[:500],
+                        ))
+                    else:
+                        secret_value = match.group(1) if match.lastindex else match.group(0)
+                        
+                        if secret_value in seen_secrets:
+                            continue
+                        
+                        if self.is_false_positive(secret_value):
+                            continue
+                        
+                        entropy = self.calculate_shannon_entropy(secret_value)
+                        confidence = base_confidence
+                        
+                        if entropy < 2.5:
+                            confidence *= 0.5
+                        
+                        if confidence < 0.5:
+                            continue
+                        
+                        context_before, context_after = self.get_context(clean_text, match.start(), match.end())
+                        
+                        seen_secrets.add(secret_value)
+                        results.append(SecretMatch(
+                            secret_type=secret_type,
+                            raw_value=secret_value,
+                            redacted_value=self.redact_secret(secret_value),
+                            confidence=round(confidence, 2),
+                            entropy=round(entropy, 2),
+                            context_before=context_before,
+                            context_after=context_after,
+                            message_id=message_id,
+                            conversation_id=conversation_id,
+                            sender=sender,
+                            timestamp=timestamp,
+                            message_content=clean_text[:500],
+                        ))
+        
+        return results
 
 
 def get_detector() -> SecretDetector:

@@ -1,0 +1,878 @@
+{% extends "layout.html" %}
+
+{% block title %}Terminator - HadesHunter{% endblock %}
+
+{% block extra_css %}
+<style>
+    .terminator-header {
+        background: linear-gradient(135deg, #dc3545 0%, #6f42c1 50%, #0d6efd 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        font-weight: 800;
+        font-size: 2.5rem;
+    }
+    
+    .source-card {
+        transition: all 0.3s ease;
+        border: 2px solid transparent;
+    }
+    
+    .source-card.teams { border-left: 4px solid #6264a7; }
+    .source-card.emails { border-left: 4px solid #0078d4; }
+    .source-card.files { border-left: 4px solid #28a745; }
+    
+    .source-card.has-secrets {
+        border-color: #dc3545 !important;
+        box-shadow: 0 0 20px rgba(220, 53, 69, 0.3);
+    }
+    
+    .status-indicator {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 8px;
+    }
+    
+    .status-indicator.ready { background-color: #28a745; }
+    .status-indicator.error { background-color: #dc3545; }
+    .status-indicator.pending { background-color: #6c757d; }
+    .status-indicator.scanning { background-color: #ffc107; animation: pulse 1s infinite; }
+    
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+    
+    .big-number {
+        font-size: 3rem;
+        font-weight: 700;
+        line-height: 1;
+    }
+    
+    .scan-progress {
+        height: 8px;
+        border-radius: 4px;
+        overflow: hidden;
+        background: #334155;
+    }
+    
+    .scan-progress-bar {
+        height: 100%;
+        background: linear-gradient(90deg, #6366f1, #8b5cf6, #dc3545);
+        background-size: 200% 100%;
+        animation: gradient-move 2s linear infinite;
+        transition: width 0.5s ease;
+    }
+    
+    @keyframes gradient-move {
+        0% { background-position: 100% 0; }
+        100% { background-position: -100% 0; }
+    }
+    
+    .secret-item {
+        border-left: 3px solid #dc3545;
+        background: rgba(220, 53, 69, 0.1);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12 text-center mb-4">
+        <h1 class="terminator-header"><i class="bi bi-lightning-charge-fill me-2"></i>TERMINATOR</h1>
+        <p class="text-muted">All-in-One Secret Scanner - Teams + Emails + OneDrive/SharePoint</p>
+    </div>
+</div>
+
+<!-- Token Configuration -->
+<div class="card mb-4">
+    <div class="card-header bg-dark">
+        <h5 class="mb-0"><i class="bi bi-key-fill me-2 text-warning"></i>Single Token - Multiple Targets</h5>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-8">
+                <div class="mb-3">
+                    <label class="form-label">Microsoft Refresh Token</label>
+                    <textarea class="form-control token-input" id="refreshToken" rows="3" 
+                        placeholder="Paste your refresh token here - it will be automatically converted for Teams API and Graph API"></textarea>
+                    <small class="text-muted">
+                        <i class="bi bi-info-circle me-1"></i>
+                        One token to rule them all - automatically exchanges for Teams (Skype) and Graph (Email/Files) access
+                    </small>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="mb-3">
+                    <label class="form-label">Tenant</label>
+                    <input type="text" class="form-control" id="tenant" placeholder="common" value="common">
+                </div>
+                <button class="btn btn-warning w-100 btn-lg" onclick="initializeAll()">
+                    <i class="bi bi-lightning-charge me-2"></i>Initialize All APIs
+                </button>
+            </div>
+        </div>
+        
+        <!-- API Status -->
+        <div class="row mt-3" id="apiStatus" style="display: none;">
+            <div class="col-md-6">
+                <div class="d-flex align-items-center p-2 rounded bg-dark">
+                    <span class="status-indicator" id="teamsStatus"></span>
+                    <span><strong>Teams API:</strong> <span id="teamsStatusText">-</span></span>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="d-flex align-items-center p-2 rounded bg-dark">
+                    <span class="status-indicator" id="graphStatus"></span>
+                    <span><strong>Graph API:</strong> <span id="graphStatusText">-</span></span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Scan Configuration -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-shield-check me-2"></i>Secret Detection Scan</h5>
+    </div>
+    <div class="card-body">
+        <div class="alert alert-info mb-3">
+            <i class="bi bi-info-circle me-2"></i>
+            <strong>No search term needed!</strong> Terminator scans ALL content (inbox, OneDrive, Teams) and uses the secret detection algorithm to find sensitive data.
+        </div>
+        <div class="row">
+            <div class="col-md-4">
+                <label class="form-label">Max Items per Source</label>
+                <select class="form-select" id="maxResults">
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                    <option value="200" selected>200</option>
+                    <option value="500">500</option>
+                    <option value="1000">ALL (1000+)</option>
+                </select>
+            </div>
+            <div class="col-md-8">
+                <label class="form-label">Scan Targets</label>
+                <div class="d-flex gap-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="scanTeams" checked>
+                        <label class="form-check-label" for="scanTeams">
+                            <i class="bi bi-microsoft-teams text-primary me-1"></i>Teams
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="scanEmails" checked>
+                        <label class="form-check-label" for="scanEmails">
+                            <i class="bi bi-envelope text-info me-1"></i>Emails
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="scanFiles" checked>
+                        <label class="form-check-label" for="scanFiles">
+                            <i class="bi bi-folder text-success me-1"></i>Files
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="mt-3">
+            <button class="btn btn-danger btn-lg w-100" onclick="runTerminatorScan()" id="scanBtn" disabled>
+                <i class="bi bi-crosshair me-2"></i>TERMINATE - Scan All Sources
+            </button>
+        </div>
+        
+        <!-- Progress Bar -->
+        <div class="mt-3" id="progressContainer" style="display: none;">
+            <div class="scan-progress">
+                <div class="scan-progress-bar" id="progressBar" style="width: 0%"></div>
+            </div>
+            <small class="text-muted" id="progressText">Initializing scan...</small>
+        </div>
+    </div>
+</div>
+
+<!-- Results Summary -->
+<div class="row mb-4" id="summaryCards" style="display: none;">
+    <div class="col-md-3">
+        <div class="stats-card text-center">
+            <div class="big-number text-danger" id="totalSecrets">0</div>
+            <div class="label">Total Secrets Found</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stats-card text-center">
+            <div class="big-number text-primary" id="teamsSecrets">0</div>
+            <div class="label">Teams Secrets</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stats-card text-center">
+            <div class="big-number text-info" id="emailSecrets">0</div>
+            <div class="label">Email Secrets</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stats-card text-center">
+            <div class="big-number text-success" id="fileSecrets">0</div>
+            <div class="label">File Secrets</div>
+        </div>
+    </div>
+</div>
+
+<!-- Results by Source -->
+<div class="row" id="resultsSection" style="display: none;">
+    <!-- Teams Results -->
+    <div class="col-md-4">
+        <div class="card source-card teams h-100" id="teamsCard">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-microsoft-teams me-2"></i>Teams</h5>
+                <span class="badge bg-primary" id="teamsCount">0</span>
+            </div>
+            <div class="card-body" id="teamsResults" style="max-height: 400px; overflow-y: auto;">
+                <p class="text-muted text-center">No results yet</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Emails Results -->
+    <div class="col-md-4">
+        <div class="card source-card emails h-100" id="emailsCard">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-envelope me-2"></i>Emails</h5>
+                <span class="badge bg-info" id="emailsCount">0</span>
+            </div>
+            <div class="card-body" id="emailsResults" style="max-height: 400px; overflow-y: auto;">
+                <p class="text-muted text-center">No results yet</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Files Results -->
+    <div class="col-md-4">
+        <div class="card source-card files h-100" id="filesCard">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-folder me-2"></i>Files</h5>
+                <span class="badge bg-success" id="filesCount">0</span>
+            </div>
+            <div class="card-body" id="filesResults" style="max-height: 400px; overflow-y: auto;">
+                <p class="text-muted text-center">No results yet</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- View All Secrets Button -->
+<div class="row mt-4" id="viewAllSection" style="display: none;">
+    <div class="col-12 text-center">
+        <a href="/results" class="btn btn-outline-danger btn-lg">
+            <i class="bi bi-list-check me-2"></i>View All Detected Secrets
+        </a>
+        <button class="btn btn-outline-primary btn-lg ms-2" onclick="exportResults()">
+            <i class="bi bi-download me-2"></i>Export Results
+        </button>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let apisReady = { teams: false, graph: false };
+let scanResults = null;
+
+async function initializeAll() {
+    const refreshToken = document.getElementById('refreshToken').value.trim();
+    const tenant = document.getElementById('tenant').value.trim() || 'common';
+    
+    if (!refreshToken) {
+        showToast('Error', 'Please enter a refresh token', 'error');
+        return;
+    }
+    
+    showLoading('Initializing APIs...');
+    document.getElementById('apiStatus').style.display = 'flex';
+    
+    // Set pending status
+    setApiStatus('teams', 'pending', 'Connecting...');
+    setApiStatus('graph', 'pending', 'Connecting...');
+    
+    try {
+        const response = await fetch('/api/terminator_init', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refresh_token: refreshToken, tenant: tenant })
+        });
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            showToast('Error', data.error, 'error');
+            return;
+        }
+        
+        // Update Teams status
+        if (data.results.teams.success) {
+            setApiStatus('teams', 'ready', data.results.teams.user);
+            apisReady.teams = true;
+        } else {
+            setApiStatus('teams', 'error', data.results.teams.error || 'Failed');
+        }
+        
+        // Update Graph status
+        if (data.results.graph.success) {
+            setApiStatus('graph', 'ready', data.results.graph.user);
+            apisReady.graph = true;
+        } else {
+            setApiStatus('graph', 'error', data.results.graph.error || 'Failed');
+        }
+        
+        // Enable scan button if at least one API is ready
+        if (apisReady.teams || apisReady.graph) {
+            document.getElementById('scanBtn').disabled = false;
+            showToast('Success', 'APIs initialized! Ready to scan.', 'success');
+        } else {
+            showToast('Error', 'Failed to initialize any API', 'error');
+        }
+        
+    } catch (error) {
+        showToast('Error', 'Initialization failed: ' + error.message, 'error');
+        setApiStatus('teams', 'error', 'Connection failed');
+        setApiStatus('graph', 'error', 'Connection failed');
+    } finally {
+        hideLoading();
+    }
+}
+
+function setApiStatus(api, status, text) {
+    const indicator = document.getElementById(api + 'Status');
+    const textEl = document.getElementById(api + 'StatusText');
+    
+    indicator.className = 'status-indicator ' + status;
+    textEl.textContent = text;
+}
+
+async function runTerminatorScan() {
+    const maxResults = parseInt(document.getElementById('maxResults').value);
+    const scanTeams = document.getElementById('scanTeams').checked;
+    const scanEmails = document.getElementById('scanEmails').checked;
+    const scanFiles = document.getElementById('scanFiles').checked;
+    
+    if (!scanTeams && !scanEmails && !scanFiles) {
+        showToast('Error', 'Please select at least one scan target', 'error');
+        return;
+    }
+    
+    // Show progress
+    document.getElementById('progressContainer').style.display = 'block';
+    document.getElementById('summaryCards').style.display = 'flex';
+    document.getElementById('resultsSection').style.display = 'flex';
+    document.getElementById('scanBtn').disabled = true;
+    
+    updateProgress(10, 'Starting secret detection scan...');
+    
+    // Set scanning status
+    if (scanTeams) setApiStatus('teams', 'scanning', 'Scanning conversations...');
+    if (scanEmails || scanFiles) setApiStatus('graph', 'scanning', 'Scanning inbox & files...');
+    
+    try {
+        updateProgress(20, 'Scanning all content for secrets...');
+        
+        const response = await fetch('/api/terminator_scan', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                scan_teams: scanTeams && apisReady.teams,
+                scan_emails: scanEmails && apisReady.graph,
+                scan_files: scanFiles && apisReady.graph,
+                max_results: maxResults
+            })
+        });
+        
+        updateProgress(80, 'Processing results...');
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            showToast('Error', data.error, 'error');
+            return;
+        }
+        
+        scanResults = data;
+        displayResults(data);
+        
+        updateProgress(100, 'Scan complete!');
+        
+        // Update API status back to ready
+        if (apisReady.teams) setApiStatus('teams', 'ready', 'Scan complete');
+        if (apisReady.graph) setApiStatus('graph', 'ready', 'Scan complete');
+        
+        // Show notification
+        if (data.total_secrets > 0) {
+            showToast('Secrets Found!', `Found ${data.total_secrets} secrets across all sources!`, 'warning');
+        } else {
+            showToast('Scan Complete', 'No secrets found in the scanned content.', 'info');
+        }
+        
+        document.getElementById('viewAllSection').style.display = 'block';
+        
+    } catch (error) {
+        showToast('Error', 'Scan failed: ' + error.message, 'error');
+    } finally {
+        document.getElementById('scanBtn').disabled = false;
+        setTimeout(() => {
+            document.getElementById('progressContainer').style.display = 'none';
+        }, 2000);
+    }
+}
+
+function updateProgress(percent, text) {
+    document.getElementById('progressBar').style.width = percent + '%';
+    document.getElementById('progressText').textContent = text;
+}
+
+function displayResults(data) {
+    // Update summary cards
+    document.getElementById('totalSecrets').textContent = data.total_secrets;
+    document.getElementById('teamsSecrets').textContent = data.teams.secrets;
+    document.getElementById('emailSecrets').textContent = data.emails.secrets;
+    document.getElementById('fileSecrets').textContent = data.files.secrets;
+    
+    // Update counts
+    document.getElementById('teamsCount').textContent = 
+        `${data.teams.conversations} convs / ${data.teams.messages} msgs`;
+    document.getElementById('emailsCount').textContent = 
+        `${data.emails.total} emails`;
+    document.getElementById('filesCount').textContent = 
+        `${data.files.total} files`;
+    
+    // Highlight cards with secrets
+    if (data.teams.secrets > 0) {
+        document.getElementById('teamsCard').classList.add('has-secrets');
+    }
+    if (data.emails.secrets > 0) {
+        document.getElementById('emailsCard').classList.add('has-secrets');
+    }
+    if (data.files.secrets > 0) {
+        document.getElementById('filesCard').classList.add('has-secrets');
+    }
+    
+    // Display Teams results
+    displayTeamsResults(data.teams);
+    
+    // Display Emails results
+    displayEmailsResults(data.emails);
+    
+    // Display Files results
+    displayFilesResults(data.files);
+}
+
+function displayTeamsResults(teams) {
+    const container = document.getElementById('teamsResults');
+    
+    if (teams.error) {
+        container.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle me-2"></i>${escapeHtml(teams.error)}</div>`;
+        return;
+    }
+    
+    if (!teams.items || teams.items.length === 0) {
+        if (teams.conversations > 0) {
+            container.innerHTML = `
+                <div class="text-center text-muted">
+                    <i class="bi bi-check-circle text-success fs-1"></i>
+                    <p class="mt-2">Scanned ${teams.conversations} conversations<br>
+                    ${teams.messages} messages<br>
+                    <strong class="text-success">No secrets found</strong></p>
+                </div>
+            `;
+        } else {
+            container.innerHTML = '<p class="text-muted text-center">No Teams data scanned</p>';
+        }
+        return;
+    }
+    
+    let html = '';
+    for (const item of teams.items) {
+        html += `
+            <div class="secret-item p-2 mb-2 rounded border border-danger">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div class="flex-grow-1 me-2">
+                        <strong class="d-block">${escapeHtml(item.conversation)}</strong>
+                        <small class="text-muted">${item.messages} messages</small>
+                    </div>
+                    <span class="badge bg-danger">${item.secrets} secrets</span>
+                </div>
+                <div class="mt-2 btn-group btn-group-sm">
+                    <button class="btn btn-outline-warning" onclick="showTeamsContext('${escapeHtml(item.conversation_id)}', '${escapeHtml(item.conversation)}')" title="Show Context">
+                        <i class="bi bi-file-text"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+    
+    container.innerHTML = html;
+}
+
+async function showTeamsContext(conversationId, conversationName) {
+    showLoading('Loading conversation...');
+    
+    try {
+        const response = await fetch('/api/get_teams_messages/' + encodeURIComponent(conversationId));
+        const data = await response.json();
+        
+        if (data.error) {
+            showToast('Error', data.error, 'error');
+            return;
+        }
+        
+        let messagesHtml = '';
+        for (const msg of data.messages || []) {
+            const content = msg.content?.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() || '';
+            if (content) {
+                messagesHtml += `
+                    <div class="mb-2 p-2 bg-dark rounded">
+                        <strong class="text-info">${escapeHtml(msg.sender || 'Unknown')}</strong>
+                        <small class="text-muted ms-2">${formatTimestamp(msg.timestamp)}</small>
+                        <div class="mt-1">${escapeHtml(content)}</div>
+                    </div>
+                `;
+            }
+        }
+        
+        if (!messagesHtml) {
+            messagesHtml = '<p class="text-muted">No messages to display</p>';
+        }
+        
+        const modalHtml = `
+            <div class="modal fade" id="teamsContextModal" tabindex="-1">
+                <div class="modal-dialog modal-xl">
+                    <div class="modal-content bg-dark">
+                        <div class="modal-header">
+                            <h5 class="modal-title">
+                                <i class="bi bi-microsoft-teams me-2"></i>${escapeHtml(conversationName)}
+                            </h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body" style="max-height: 500px; overflow-y: auto;">
+                            ${messagesHtml}
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        const existingModal = document.getElementById('teamsContextModal');
+        if (existingModal) existingModal.remove();
+        
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        const modal = new bootstrap.Modal(document.getElementById('teamsContextModal'));
+        modal.show();
+    } catch (error) {
+        showToast('Error', 'Failed to load conversation: ' + error.message, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+function displayEmailsResults(emails) {
+    const container = document.getElementById('emailsResults');
+    
+    if (emails.error) {
+        container.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle me-2"></i>${escapeHtml(emails.error)}</div>`;
+        return;
+    }
+    
+    if (!emails.items || emails.items.length === 0) {
+        if (emails.total > 0) {
+            container.innerHTML = `
+                <div class="text-center text-muted">
+                    <i class="bi bi-check-circle text-success fs-1"></i>
+                    <p class="mt-2">Scanned ${emails.total} emails<br>
+                    <strong class="text-success">No secrets detected</strong></p>
+                </div>
+            `;
+        } else {
+            container.innerHTML = '<p class="text-muted text-center">No emails scanned</p>';
+        }
+        return;
+    }
+    
+    let html = '';
+    for (const item of emails.items) {
+        html += `
+            <div class="secret-item p-2 mb-2 rounded border border-danger">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div class="flex-grow-1 me-2">
+                        <strong class="d-block text-truncate" style="max-width: 220px;" title="${escapeHtml(item.subject || '')}">${escapeHtml(item.subject || '(No subject)')}</strong>
+                        <small class="text-muted d-block">${escapeHtml(item.sender || item.sender_name || '')}</small>
+                    </div>
+                    <span class="badge bg-danger">${item.secrets_found} secrets</span>
+                </div>
+                ${item.preview ? `<small class="text-muted d-block mt-1 text-truncate" style="max-width: 280px;">${escapeHtml(item.preview.substring(0, 80))}...</small>` : ''}
+                <div class="mt-2 btn-group btn-group-sm">
+                    <button class="btn btn-outline-warning" onclick="showEmailContext('${item.id}')" title="Show Context">
+                        <i class="bi bi-file-text"></i>
+                    </button>
+                    <button class="btn btn-outline-success" onclick="downloadEmail('${item.id}')" title="Download EML">
+                        <i class="bi bi-download"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+    
+    container.innerHTML = html;
+}
+
+async function viewEmailDetails(emailId) {
+    showLoading('Loading email...');
+    try {
+        const response = await fetch('/api/get_email/' + emailId);
+        const data = await response.json();
+        
+        if (data.error) {
+            showToast('Error', data.error, 'error');
+            return;
+        }
+        
+        const email = data.email;
+        const body = email.body?.content || email.bodyPreview || 'No content available';
+        
+        // Create modal content
+        const modalHtml = `
+            <div class="modal fade" id="emailDetailModal" tabindex="-1">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content bg-dark">
+                        <div class="modal-header">
+                            <h5 class="modal-title">${escapeHtml(email.subject || '(No subject)')}</h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p><strong>From:</strong> ${escapeHtml(email.from?.emailAddress?.name || '')} &lt;${escapeHtml(email.from?.emailAddress?.address || '')}&gt;</p>
+                            <p><strong>To:</strong> ${email.toRecipients?.map(r => escapeHtml(r.emailAddress?.address || '')).join(', ') || 'N/A'}</p>
+                            <p><strong>Date:</strong> ${formatTimestamp(email.sentDateTime)}</p>
+                            <hr>
+                            <div class="email-body p-3 bg-secondary rounded" style="max-height: 400px; overflow-y: auto;">
+                                ${DOMPurify.sanitize(body)}
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                            <button type="button" class="btn btn-primary" onclick="downloadEmail('${emailId}')">
+                                <i class="bi bi-download me-2"></i>Download EML
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Remove existing modal if any
+        const existingModal = document.getElementById('emailDetailModal');
+        if (existingModal) existingModal.remove();
+        
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        const modal = new bootstrap.Modal(document.getElementById('emailDetailModal'));
+        modal.show();
+    } catch (error) {
+        showToast('Error', 'Failed to load email: ' + error.message, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+function downloadEmail(emailId) {
+    window.open('/api/download_email/' + emailId, '_blank');
+}
+
+async function showEmailContext(emailId) {
+    showLoading('Loading email content...');
+    
+    try {
+        const response = await fetch('/api/get_email/' + emailId);
+        const data = await response.json();
+        
+        if (data.error) {
+            showToast('Error', data.error, 'error');
+            return;
+        }
+        
+        const email = data.email;
+        let bodyContent = email.body?.content || email.bodyPreview || 'No content available';
+        
+        // Clean HTML tags for display
+        let cleanBody = bodyContent.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+        
+        const modalHtml = `
+            <div class="modal fade" id="emailContextModal" tabindex="-1">
+                <div class="modal-dialog modal-xl">
+                    <div class="modal-content bg-dark">
+                        <div class="modal-header">
+                            <h5 class="modal-title">
+                                <i class="bi bi-envelope me-2"></i>${escapeHtml(email.subject || '(No subject)')}
+                            </h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <strong>From:</strong> ${escapeHtml(email.from?.emailAddress?.name || '')} 
+                                    &lt;${escapeHtml(email.from?.emailAddress?.address || '')}&gt;
+                                </div>
+                                <div class="col-md-6">
+                                    <strong>Date:</strong> ${formatTimestamp(email.sentDateTime)}
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <strong>To:</strong> ${email.toRecipients?.map(r => escapeHtml(r.emailAddress?.address || '')).join(', ') || 'N/A'}
+                            </div>
+                            <hr>
+                            <div class="email-content p-3 bg-secondary rounded" style="max-height: 500px; overflow-y: auto; white-space: pre-wrap; font-family: monospace; font-size: 0.9rem;">
+                                ${escapeHtml(cleanBody)}
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                            <button type="button" class="btn btn-primary" onclick="downloadEmail('${emailId}')">
+                                <i class="bi bi-download me-2"></i>Download EML
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        const existingModal = document.getElementById('emailContextModal');
+        if (existingModal) existingModal.remove();
+        
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        const modal = new bootstrap.Modal(document.getElementById('emailContextModal'));
+        modal.show();
+    } catch (error) {
+        showToast('Error', 'Failed to load email: ' + error.message, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+function displayFilesResults(files) {
+    const container = document.getElementById('filesResults');
+    
+    if (files.error) {
+        container.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle me-2"></i>${escapeHtml(files.error)}</div>`;
+        return;
+    }
+    
+    if (!files.items || files.items.length === 0) {
+        if (files.total > 0) {
+            container.innerHTML = `
+                <div class="text-center text-muted">
+                    <i class="bi bi-check-circle text-success fs-1"></i>
+                    <p class="mt-2">Scanned ${files.total} files<br>
+                    <strong class="text-success">No secrets detected</strong></p>
+                </div>
+            `;
+        } else {
+            container.innerHTML = '<p class="text-muted text-center">No files scanned</p>';
+        }
+        return;
+    }
+    
+    let html = '';
+    for (const item of files.items) {
+        html += `
+            <div class="secret-item p-2 mb-2 rounded border border-danger">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div class="flex-grow-1 me-2">
+                        <strong class="d-block text-truncate" style="max-width: 220px;" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</strong>
+                        <small class="text-muted">${item.size_formatted || ''}</small>
+                    </div>
+                    <span class="badge bg-danger">${item.secrets_found} secrets</span>
+                </div>
+                ${item.preview ? `<small class="text-muted d-block mt-1 text-truncate" style="max-width: 280px;">${escapeHtml(item.preview.substring(0, 80))}...</small>` : ''}
+                <div class="mt-2 btn-group btn-group-sm">
+                    <button class="btn btn-outline-primary" onclick="viewFilePreview('${item.drive_id}', '${item.id}', '${escapeHtml(item.name)}')" title="Preview">
+                        <i class="bi bi-eye"></i>
+                    </button>
+                    <button class="btn btn-outline-success" onclick="downloadFile('${item.drive_id}', '${item.id}')" title="Download">
+                        <i class="bi bi-download"></i>
+                    </button>
+                    ${item.web_url ? `<a href="${item.web_url}" target="_blank" class="btn btn-outline-info" title="Open in Browser"><i class="bi bi-box-arrow-up-right"></i></a>` : ''}
+                </div>
+            </div>
+        `;
+    }
+    
+    container.innerHTML = html;
+}
+
+async function viewFilePreview(driveId, itemId, filename) {
+    showLoading('Loading file preview...');
+    try {
+        const response = await fetch(`/api/get_file_preview/${driveId}/${itemId}`);
+        const data = await response.json();
+        
+        let previewContent = '';
+        if (data.thumbnail_url) {
+            previewContent += `<div class="text-center mb-3"><img src="${data.thumbnail_url}" class="img-fluid rounded" style="max-height: 250px;"></div>`;
+        }
+        if (data.preview) {
+            previewContent += `<pre class="bg-secondary p-3 rounded text-light" style="max-height: 300px; overflow-y: auto; white-space: pre-wrap;">${escapeHtml(data.preview)}</pre>`;
+        }
+        if (!data.thumbnail_url && !data.preview) {
+            previewContent = '<p class="text-muted text-center">No preview available for this file type.</p>';
+        }
+        
+        const modalHtml = `
+            <div class="modal fade" id="fileDetailModal" tabindex="-1">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content bg-dark">
+                        <div class="modal-header">
+                            <h5 class="modal-title">${escapeHtml(filename)}</h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            ${previewContent}
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                            <button type="button" class="btn btn-primary" onclick="downloadFile('${driveId}', '${itemId}')">
+                                <i class="bi bi-download me-2"></i>Download
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        const existingModal = document.getElementById('fileDetailModal');
+        if (existingModal) existingModal.remove();
+        
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        const modal = new bootstrap.Modal(document.getElementById('fileDetailModal'));
+        modal.show();
+    } catch (error) {
+        showToast('Error', 'Failed to load preview: ' + error.message, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+function downloadFile(driveId, itemId) {
+    window.open(`/api/download_file/${driveId}/${itemId}`, '_blank');
+}
+
+function exportResults() {
+    if (scanResults && scanResults.scan_id) {
+        window.open('/api/export_results?scan_id=' + scanResults.scan_id, '_blank');
+    } else {
+        showToast('Error', 'No scan results to export', 'error');
+    }
+}
+</script>
+{% endblock %}
