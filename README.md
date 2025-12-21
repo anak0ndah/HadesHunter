@@ -18,14 +18,12 @@ Corporate chat platforms like Microsoft Teams are often overlooked during securi
 - Private keys shared during troubleshooting
 - Service account credentials exchanged during onboarding
 
+![Intro](images/TerminatorResults.png)
+
 This data persists in chat history and can be accessed by attackers who compromise a user account or obtain valid tokens. HadesHunter helps identify these exposures.
 
 
-## Demo
-
-https://github.com/user-attachments/assets/86c0d931-3acd-4807-9621-cbe191845145
-
-![Home](images/HomepagetopushToken.png)
+![Home](images/HomePage.png)
 
 ## What it does
 
