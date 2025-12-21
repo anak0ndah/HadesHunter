@@ -25,7 +25,7 @@
     </div>
 </div>
 
-<!-- Stats Cards -->
+
 <div class="row mb-4" id="statsRow">
     <div class="col-md-3">
         <div class="stats-card">
@@ -53,7 +53,7 @@
     </div>
 </div>
 
-<!-- Filters -->
+
 <div class="row mb-4">
     <div class="col-12">
         <div class="card">
@@ -94,7 +94,7 @@
     </div>
 </div>
 
-<!-- Results List -->
+
 <div class="row">
     <div class="col-12">
         <div id="resultsContainer">
@@ -108,7 +108,7 @@
     </div>
 </div>
 
-<!-- Context Modal -->
+
 <div class="modal fade" id="contextModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
@@ -135,6 +135,7 @@
 {% block extra_js %}
 <script>
     let allResults = [];
+    let displayedResults = [];
     let currentScanId = null;
     
     document.addEventListener("DOMContentLoaded", loadResults);
@@ -232,6 +233,7 @@
     
     function renderResults(results) {
         const container = document.getElementById("resultsContainer");
+        displayedResults = results;
         
         if (results.length === 0) {
             container.innerHTML = `
@@ -298,7 +300,8 @@
                             
                             <div class="col-md-4 text-end">
                                 <button class="btn btn-outline-primary btn-sm me-1" 
-                                        onclick="showContext('${secret.conversation_id}', '${secret.message_id}')">
+                                        data-secret-index="${index}"
+                                        onclick="showSecretContext(displayedResults[this.dataset.secretIndex])">
                                     <i class="bi bi-chat-text me-1"></i>View Context
                                 </button>
                                 <button class="btn btn-outline-danger btn-sm" 
@@ -315,65 +318,302 @@
         container.innerHTML = html;
     }
     
-    async function showContext(conversationId, messageId) {
+    async function showSecretContext(secret) {
+        if (!secret) {
+            console.error('No secret provided');
+            return;
+        }
         const modal = new bootstrap.Modal(document.getElementById("contextModal"));
         const modalBody = document.getElementById("contextModalBody");
+        const source = getSource(secret);
         
+        // Show loading
         modalBody.innerHTML = `
             <div class="text-center py-4">
                 <div class="spinner-border text-primary" role="status"></div>
                 <p class="mt-2">Loading context...</p>
             </div>
         `;
-        
         modal.show();
         
+        if (source === 'teams') {
+            await showTeamsContextModal(secret, modalBody);
+        } else if (source === 'email') {
+            await showEmailContextModal(secret, modalBody);
+        } else {
+            showFileContextModal(secret, modalBody);
+        }
+    }
+    
+    async function showTeamsContextModal(secret, modalBody) {
         try {
-            const response = await fetch(`/api/get_context/${conversationId}/${messageId}`);
+            // Fetch messages from the conversation
+            const response = await fetch('/api/get_teams_messages/' + encodeURIComponent(secret.conversation_id));
             const data = await response.json();
             
             if (data.error) {
-                modalBody.innerHTML = `
-                    <div class="alert alert-danger">
-                        <i class="bi bi-exclamation-triangle me-2"></i>${data.error}
-                    </div>
-                `;
-                return;
+                throw new Error(data.error);
             }
             
+            const messages = data.messages || [];
+            
+            // Filter out system messages and clean content
+            const cleanMessages = messages.filter(msg => {
+                const content = msg.content || '';
+                if (content.includes('orgid:') || content.includes('8:orgid:')) return false;
+                if (content.match(/^https?:\/\/.*teams\.microsoft\.com/i)) return false;
+                if (content.match(/^[a-f0-9-]{30,}$/i)) return false;
+                return true;
+            }).map(msg => {
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = DOMPurify.sanitize(msg.content || '');
+                return {
+                    sender: msg.sender || 'Unknown',
+                    content: tempDiv.textContent || tempDiv.innerText || '',
+                    timestamp: msg.timestamp
+                };
+            }).filter(msg => msg.content.trim());
+            
             let html = `
-                <div class="mb-3">
-                    <strong>Conversation:</strong> ${escapeHtml(data.conversation_name)}
+                <div class="mb-3 pb-2 border-bottom border-secondary d-flex justify-content-between align-items-center">
+                    <div>
+                        <i class="bi bi-microsoft-teams text-primary me-2"></i>
+                        <strong>${escapeHtml(secret.conversation_name || 'Teams Conversation')}</strong>
+                    </div>
+                    <span class="badge bg-danger"><i class="bi bi-exclamation-triangle me-1"></i>Contains Potential Secret</span>
                 </div>
-                <div class="messages-container">
+                
+                <div class="mb-3 small text-muted">
+                    <div><strong>Conversation ID:</strong> <code>${escapeHtml(secret.conversation_id || '')}</code></div>
+                    <div><strong>Target Message ID:</strong> <code>${escapeHtml(secret.message_id || '')}</code></div>
+                </div>
+                
+                <div class="card bg-dark border-secondary mb-3">
+                    <div class="card-header">
+                        <i class="bi bi-chat-dots me-2"></i>Messages (context)
+                    </div>
+                    <div class="card-body" style="max-height: 400px; overflow-y: auto;">
             `;
             
-            data.messages.forEach(msg => {
-                const bubbleClass = msg.is_from_me ? "from-me" : "from-other";
-                const targetClass = msg.is_target ? "target-message" : "";
+            if (cleanMessages.length === 0) {
+                html += '<p class="text-muted">No messages to display</p>';
+            } else {
+                // Get secret value - try raw_value first, then extract from redacted
+                let secretValue = secret.raw_value || '';
+                if (!secretValue && secret.redacted_value) {
+                    // Extract non-asterisk parts from redacted value for matching
+                    secretValue = secret.redacted_value.replace(/\*/g, '');
+                }
+                const secretLower = secretValue.toLowerCase();
                 
-                html += `
-                    <div class="d-flex ${msg.is_from_me ? 'justify-content-end' : 'justify-content-start'}">
-                        <div class="message-bubble ${bubbleClass} ${targetClass}">
-                            <div class="mb-1">
-                                <strong>${escapeHtml(msg.sender)}</strong>
-                                <small class="text-muted ms-2">${formatTimestamp(msg.timestamp)}</small>
+                cleanMessages.forEach(msg => {
+                    // Check if this message contains the secret
+                    const msgLower = msg.content.toLowerCase();
+                    const containsSecret = secretLower.length > 3 && msgLower.includes(secretLower);
+                    
+                    html += `
+                        <div class="d-flex justify-content-end mb-3">
+                            <div class="p-3 rounded-3 ${containsSecret ? 'bg-danger bg-opacity-75' : 'bg-secondary bg-opacity-50'}" style="max-width: 85%;">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <strong class="text-light">${escapeHtml(msg.sender)}</strong>
+                                    <small class="text-muted ms-3">${formatTimestamp(msg.timestamp)}</small>
+                                </div>
+                                <div class="text-light" style="white-space: pre-wrap;">${escapeHtml(msg.content)}</div>
+                                ${containsSecret ? '<div class="mt-2"><span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle me-1"></i>Secret Detected Here</span></div>' : ''}
                             </div>
-                            <div>${DOMPurify.sanitize(msg.content)}</div>
                         </div>
+                    `;
+                });
+            }
+            
+            html += `
                     </div>
-                `;
-            });
+                </div>
+                
+                <div class="card bg-danger bg-opacity-10 border-danger">
+                    <div class="card-header small text-danger">
+                        <i class="bi bi-exclamation-triangle me-1"></i>Detected Secret
+                    </div>
+                    <div class="card-body">
+                        <span class="badge bg-warning text-dark me-2">${escapeHtml(secret.type)}</span>
+                        <code class="text-danger fs-6">${escapeHtml(secret.raw_value || secret.redacted_value)}</code>
+                    </div>
+                </div>
+            `;
             
-            html += "</div>";
             modalBody.innerHTML = html;
-            
         } catch (error) {
             modalBody.innerHTML = `
                 <div class="alert alert-danger">
-                    <i class="bi bi-exclamation-triangle me-2"></i>Failed to load context: ${error.message}
+                    <i class="bi bi-exclamation-triangle me-2"></i>Failed to load Teams messages: ${escapeHtml(error.message)}
                 </div>
             `;
+        }
+    }
+    
+    async function showEmailContextModal(secret, modalBody) {
+        // Try to fetch full email content
+        let email = null;
+        let cleanBody = '';
+        
+        if (secret.message_id) {
+            try {
+                const response = await fetch('/api/get_email/' + secret.message_id);
+                const data = await response.json();
+                if (!data.error && data.email) {
+                    email = data.email;
+                    const bodyContent = email.body?.content || email.bodyPreview || '';
+                    const tempDiv = document.createElement('div');
+                    tempDiv.innerHTML = DOMPurify.sanitize(bodyContent);
+                    cleanBody = tempDiv.textContent || tempDiv.innerText || '';
+                    cleanBody = cleanBody.replace(/\s+/g, ' ').trim();
+                }
+            } catch (e) {
+                console.log('Could not fetch email:', e);
+            }
+        }
+        
+        // Fallback to stored content
+        if (!cleanBody) {
+            let fullContent = secret.message_content || '';
+            if (!fullContent) {
+                fullContent = (secret.context_before || '') + (secret.raw_value || secret.redacted_value || '') + (secret.context_after || '');
+            }
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = DOMPurify.sanitize(fullContent);
+            cleanBody = tempDiv.textContent || tempDiv.innerText || '';
+            cleanBody = cleanBody.replace(/\s+/g, ' ').trim();
+        }
+        
+        // Highlight secret in content
+        const secretValue = secret.raw_value || '';
+        let highlightedBody = escapeHtml(cleanBody);
+        if (secretValue.length > 3) {
+            const regex = new RegExp('(' + secretValue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+            highlightedBody = highlightedBody.replace(regex, '<mark class="bg-danger text-white px-1 rounded">$1</mark>');
+        }
+        
+        const emailSubject = email?.subject || secret.conversation_name || 'Email';
+        const emailFrom = email?.from?.emailAddress?.address || secret.sender || 'Unknown';
+        const emailTo = email?.toRecipients?.map(r => r.emailAddress?.address).join(', ') || 'N/A';
+        const emailDate = email?.sentDateTime || secret.timestamp;
+        
+        let html = `
+            <div class="mb-3 pb-2 border-bottom border-danger d-flex justify-content-between align-items-center">
+                <div>
+                    <i class="bi bi-envelope text-info me-2"></i>
+                    <strong>${escapeHtml(emailSubject)}</strong>
+                </div>
+                <span class="badge bg-danger"><i class="bi bi-exclamation-triangle me-1"></i>Contains Potential Secret</span>
+            </div>
+            
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <div class="small"><strong>From:</strong> ${escapeHtml(emailFrom)}</div>
+                    <div class="small"><strong>To:</strong> ${escapeHtml(emailTo)}</div>
+                </div>
+                <div class="col-md-6 text-md-end">
+                    <div class="small text-muted"><i class="bi bi-clock me-1"></i>${formatTimestamp(emailDate)}</div>
+                    ${secret.message_id ? `<div class="small text-muted"><i class="bi bi-envelope me-1"></i>ID: ${secret.message_id.substring(0, 20)}...</div>` : ''}
+                </div>
+            </div>
+            
+            <div class="card bg-dark border-secondary mb-3">
+                <div class="card-header d-flex justify-content-between">
+                    <span><i class="bi bi-body-text me-2"></i>Email Content</span>
+                    <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle me-1"></i>Secret highlighted in red</span>
+                </div>
+                <div class="card-body" style="max-height: 350px; overflow-y: auto;">
+                    <div style="white-space: pre-wrap; word-break: break-word; font-size: 0.9rem; line-height: 1.6;">${highlightedBody}</div>
+                </div>
+            </div>
+            
+            <div class="card bg-danger bg-opacity-10 border-danger mb-3">
+                <div class="card-header text-danger">
+                    <i class="bi bi-shield-exclamation me-2"></i>Detected Secret
+                </div>
+                <div class="card-body">
+                    <div class="d-flex align-items-center p-2 bg-dark rounded">
+                        <span class="badge bg-warning text-dark me-3">${escapeHtml(secret.type)}</span>
+                        <code class="text-danger flex-grow-1" style="font-size: 1rem;">${escapeHtml(secret.raw_value || secret.redacted_value)}</code>
+                        <span class="badge bg-secondary ms-2">${Math.round((secret.confidence || 0) * 100)}%</span>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        if (secret.message_id) {
+            html += `
+                <div class="d-flex gap-2">
+                    <button class="btn btn-info btn-sm" onclick="downloadEml('${secret.message_id}')">
+                        <i class="bi bi-download me-2"></i>Download .eml
+                    </button>
+                </div>
+            `;
+        }
+        
+        modalBody.innerHTML = html;
+    }
+    
+    function showFileContextModal(secret, modalBody) {
+        let fullContent = secret.message_content || '';
+        if (!fullContent) {
+            fullContent = (secret.context_before || '') + (secret.raw_value || secret.redacted_value || '') + (secret.context_after || '');
+        }
+        
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = DOMPurify.sanitize(fullContent);
+        let cleanContent = tempDiv.textContent || tempDiv.innerText || '';
+        
+        let html = `
+            <div class="mb-3 pb-2 border-bottom border-secondary d-flex justify-content-between align-items-center">
+                <div>
+                    <i class="bi bi-file-earmark-text text-success me-2"></i>
+                    <strong>${escapeHtml(secret.conversation_name || 'File')}</strong>
+                </div>
+                <span class="badge bg-danger"><i class="bi bi-exclamation-triangle me-1"></i>Contains Potential Secret</span>
+            </div>
+            
+            <div class="card bg-dark border-secondary mb-3">
+                <div class="card-header">
+                    <i class="bi bi-code me-2"></i>File Content
+                </div>
+                <div class="card-body">
+                    <pre class="mb-0 text-light" style="white-space: pre-wrap; word-break: break-word; font-size: 0.85rem;">${escapeHtml(cleanContent)}</pre>
+                </div>
+            </div>
+            
+            <div class="card bg-danger bg-opacity-10 border-danger">
+                <div class="card-header small text-danger">
+                    <i class="bi bi-exclamation-triangle me-1"></i>Detected Secret
+                </div>
+                <div class="card-body">
+                    <span class="badge bg-warning text-dark me-2">${escapeHtml(secret.type)}</span>
+                    <code class="text-danger fs-6">${escapeHtml(secret.redacted_value)}</code>
+                </div>
+            </div>
+        `;
+        
+        modalBody.innerHTML = html;
+    }
+    
+    async function downloadEml(messageId) {
+        try {
+            const response = await fetch('/api/download_email/' + messageId);
+            if (!response.ok) {
+                const data = await response.json();
+                showToast('Error', data.error || 'Failed to download', 'error');
+                return;
+            }
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'email_' + messageId + '.eml';
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            showToast('Error', 'Failed to download: ' + error.message, 'error');
         }
     }
     

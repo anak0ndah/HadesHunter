@@ -109,6 +109,24 @@
     </div>
 </div>
 
+<div class="row mb-4" id="resultsSection" style="display: none;">
+    <div class="col-12">
+        <div class="card border-danger">
+            <div class="card-header bg-danger bg-opacity-25 d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-shield-exclamation me-2"></i>Scan Results</h5>
+                <div>
+                    <span class="badge bg-danger me-2" id="secretsCountBadge">0 secrets</span>
+                    <a href="/history" class="btn btn-outline-light btn-sm">
+                        <i class="bi bi-clock-history me-1"></i>View History
+                    </a>
+                </div>
+            </div>
+            <div class="card-body" id="resultsContainer" style="max-height: 500px; overflow-y: auto;">
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="row">
     <div class="col-12">
         <div class="card">
@@ -348,13 +366,10 @@
             
             if (data.secrets_found > 0) {
                 showToast("Warning", `Found ${data.secrets_found} potential secrets in ${data.messages_scanned} messages!`, "warning");
+                // Load and display results
+                await loadAndDisplayResults();
             } else {
                 showToast("Success", `Scanned ${data.messages_scanned} messages - No secrets found`, "success");
-            }
-            
-            // Redirect to results if secrets found
-            if (data.secrets_found > 0) {
-                window.location.href = "/results";
             }
             
         } catch (error) {
@@ -411,11 +426,204 @@
                 totalSecrets > 0 ? "warning" : "success"
             );
             
-            // Redirect to results
-            window.location.href = "/results";
+            // Display results in page
+            await loadAndDisplayResults();
             
         } catch (error) {
             showToast("Error", "Failed to scan: " + error.message, "error");
+        } finally {
+            hideLoading();
+        }
+    }
+    
+    let teamsSecrets = [];
+    
+    async function loadAndDisplayResults() {
+        try {
+            const response = await fetch('/api/get_results');
+            const data = await response.json();
+            
+            if (data.error) {
+                console.error('Error loading results:', data.error);
+                return;
+            }
+            
+            teamsSecrets = data.secrets || [];
+            
+            if (teamsSecrets.length === 0) {
+                document.getElementById('resultsSection').style.display = 'none';
+                return;
+            }
+            
+            document.getElementById('resultsSection').style.display = 'block';
+            document.getElementById('secretsCountBadge').textContent = teamsSecrets.length + ' secrets';
+            
+            const container = document.getElementById('resultsContainer');
+            let html = '';
+            
+            teamsSecrets.forEach((secret, index) => {
+                const confidencePercent = Math.round((secret.confidence || 0) * 100);
+                const confidenceClass = confidencePercent >= 80 ? 'bg-danger' : confidencePercent >= 60 ? 'bg-warning' : 'bg-secondary';
+                
+                html += `
+                    <div class="secret-item p-3 mb-3 rounded border border-danger bg-dark">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <div>
+                                <span class="badge bg-primary me-2"><i class="bi bi-microsoft-teams me-1"></i>Teams</span>
+                                <span class="badge bg-warning text-dark me-2">${escapeHtml(secret.type)}</span>
+                                <span class="badge ${confidenceClass}">${confidencePercent}%</span>
+                            </div>
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-warning" onclick="showTeamsSecretContext(${index})" title="View Context">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="mb-2">
+                            <code class="text-danger" style="font-size: 1rem;">${escapeHtml(secret.raw_value || secret.redacted_value)}</code>
+                        </div>
+                        <div class="small text-muted">
+                            <i class="bi bi-person me-1"></i>${escapeHtml(secret.sender || 'Unknown')}
+                            <span class="mx-2">•</span>
+                            <i class="bi bi-chat me-1"></i>${escapeHtml(secret.conversation_name || 'Unknown')}
+                            <span class="mx-2">•</span>
+                            <i class="bi bi-clock me-1"></i>${formatTimestamp(secret.timestamp)}
+                        </div>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+            
+            // Scroll to results
+            document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth' });
+            
+        } catch (error) {
+            console.error('Error loading results:', error);
+        }
+    }
+    
+    async function showTeamsSecretContext(index) {
+        const secret = teamsSecrets[index];
+        if (!secret) return;
+        
+        showLoading('Loading conversation...');
+        
+        try {
+            const response = await fetch('/api/get_teams_messages/' + encodeURIComponent(secret.conversation_id));
+            const data = await response.json();
+            
+            if (data.error) {
+                showToast('Error', data.error, 'error');
+                return;
+            }
+            
+            const messages = data.messages || [];
+            const secretValue = secret.raw_value || '';
+            
+            // Filter and clean messages
+            const cleanMessages = messages.filter(msg => {
+                const content = msg.content || '';
+                if (content.includes('orgid:') || content.includes('8:orgid:')) return false;
+                if (content.match(/^https?:\/\/.*teams\.microsoft\.com/i)) return false;
+                return true;
+            }).map(msg => {
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = DOMPurify.sanitize(msg.content || '');
+                return {
+                    sender: msg.sender || 'Unknown',
+                    content: tempDiv.textContent || tempDiv.innerText || '',
+                    timestamp: msg.timestamp
+                };
+            }).filter(msg => msg.content.trim());
+            
+            let messagesHtml = '';
+            cleanMessages.forEach(msg => {
+                const containsSecret = secretValue.length > 3 && msg.content.toLowerCase().includes(secretValue.toLowerCase());
+                
+                // Highlight secret in message
+                let displayContent = escapeHtml(msg.content);
+                if (containsSecret && secretValue.length > 3) {
+                    const regex = new RegExp('(' + secretValue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+                    displayContent = displayContent.replace(regex, '<mark class="bg-danger text-white px-1 rounded">$1</mark>');
+                }
+                
+                messagesHtml += `
+                    <div class="d-flex justify-content-end mb-3">
+                        <div class="p-3 rounded-3 ${containsSecret ? 'bg-danger bg-opacity-75' : 'bg-secondary bg-opacity-50'}" style="max-width: 85%;">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <strong class="text-light">${escapeHtml(msg.sender)}</strong>
+                                <small class="text-muted ms-3">${formatTimestamp(msg.timestamp)}</small>
+                            </div>
+                            <div class="text-light" style="white-space: pre-wrap;">${displayContent}</div>
+                            ${containsSecret ? '<div class="mt-2"><span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle me-1"></i>Secret Detected Here</span></div>' : ''}
+                        </div>
+                    </div>
+                `;
+            });
+            
+            if (!messagesHtml) {
+                messagesHtml = '<p class="text-muted">No messages to display</p>';
+            }
+            
+            const modalHtml = `
+                <div class="modal fade" id="teamsContextModal" tabindex="-1">
+                    <div class="modal-dialog modal-xl">
+                        <div class="modal-content bg-dark">
+                            <div class="modal-header border-danger">
+                                <div>
+                                    <i class="bi bi-microsoft-teams text-primary me-2"></i>
+                                    <strong>${escapeHtml(secret.conversation_name || 'Teams Conversation')}</strong>
+                                </div>
+                                <div>
+                                    <span class="badge bg-danger me-2"><i class="bi bi-exclamation-triangle me-1"></i>Contains Potential Secret</span>
+                                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                </div>
+                            </div>
+                            <div class="modal-body">
+                                <div class="small text-muted mb-3">
+                                    <strong>Conversation ID:</strong> <code>${escapeHtml(secret.conversation_id || '')}</code>
+                                </div>
+                                
+                                <div class="card bg-dark border-secondary mb-3">
+                                    <div class="card-header d-flex justify-content-between">
+                                        <span><i class="bi bi-chat-dots me-2"></i>Messages (context)</span>
+                                        <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle me-1"></i>Secret highlighted in red</span>
+                                    </div>
+                                    <div class="card-body" style="max-height: 350px; overflow-y: auto;">
+                                        ${messagesHtml}
+                                    </div>
+                                </div>
+                                
+                                <div class="card bg-danger bg-opacity-10 border-danger">
+                                    <div class="card-header text-danger">
+                                        <i class="bi bi-shield-exclamation me-2"></i>Detected Secret
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="d-flex align-items-center p-2 bg-dark rounded">
+                                            <span class="badge bg-warning text-dark me-3">${escapeHtml(secret.type)}</span>
+                                            <code class="text-danger flex-grow-1" style="font-size: 1rem;">${escapeHtml(secret.raw_value || secret.redacted_value)}</code>
+                                            <span class="badge bg-secondary ms-2">${Math.round((secret.confidence || 0) * 100)}%</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            const existingModal = document.getElementById('teamsContextModal');
+            if (existingModal) existingModal.remove();
+            
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            const modal = new bootstrap.Modal(document.getElementById('teamsContextModal'));
+            modal.show();
+        } catch (error) {
+            showToast('Error', 'Failed to load conversation: ' + error.message, 'error');
         } finally {
             hideLoading();
         }

@@ -249,21 +249,24 @@ def save_secret(scan_id: int, secret_data: Dict) -> bool:
         raw_value = secret_data.get('raw_value', '')
         secret_hash = hash_secret(raw_value)
         new_confidence = secret_data.get('confidence', 0)
+        new_type = secret_data.get('type', '')
         
+        # Check for exact duplicate by hash
         cursor.execute('''
-            SELECT id, confidence, secret_hash FROM secrets 
+            SELECT id, confidence, secret_hash, secret_type FROM secrets 
             WHERE scan_id = ? AND secret_hash = ?
         ''', (scan_id, secret_hash))
         
         existing = cursor.fetchone()
         if existing:
+            # Update only if new confidence is higher
             if new_confidence > existing['confidence']:
                 cursor.execute('''
                     UPDATE secrets SET 
                         secret_type = ?, confidence = ?, entropy = ?
                     WHERE id = ?
                 ''', (
-                    secret_data.get('type', ''),
+                    new_type,
                     new_confidence,
                     secret_data.get('entropy', 0),
                     existing['id']
@@ -271,12 +274,40 @@ def save_secret(scan_id: int, secret_data: Dict) -> bool:
                 return True
             return False
         
+        # Check for duplicates by raw_value content (one contains the other)
         cursor.execute('''
-            SELECT id, confidence, secret_hash FROM secrets 
+            SELECT id, confidence, secret_hash, raw_value, secret_type FROM secrets 
             WHERE scan_id = ?
         ''', (scan_id,))
         
         for row in cursor.fetchall():
+            existing_raw = row['raw_value'] or ''
+            # Skip if values are too short
+            if len(raw_value) < 8 or len(existing_raw) < 8:
+                continue
+            
+            # Check if one value contains the other (same secret, different detection)
+            if raw_value in existing_raw or existing_raw in raw_value:
+                # Keep the one with higher confidence, or the more specific type
+                if new_confidence > row['confidence']:
+                    cursor.execute('''
+                        UPDATE secrets SET 
+                            secret_type = ?, raw_value = ?, redacted_value = ?,
+                            secret_hash = ?, confidence = ?, entropy = ?
+                        WHERE id = ?
+                    ''', (
+                        new_type,
+                        raw_value if len(raw_value) >= len(existing_raw) else existing_raw,
+                        secret_data.get('redacted_value', ''),
+                        secret_hash,
+                        new_confidence,
+                        secret_data.get('entropy', 0),
+                        row['id']
+                    ))
+                    return True
+                return False
+            
+            # Check hash similarity
             if is_similar_secret(secret_hash, row['secret_hash']):
                 if new_confidence > row['confidence']:
                     cursor.execute('''
@@ -285,7 +316,7 @@ def save_secret(scan_id: int, secret_data: Dict) -> bool:
                             secret_hash = ?, confidence = ?, entropy = ?
                         WHERE id = ?
                     ''', (
-                        secret_data.get('type', ''),
+                        new_type,
                         raw_value,
                         secret_data.get('redacted_value', ''),
                         secret_hash,

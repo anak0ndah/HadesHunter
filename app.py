@@ -412,6 +412,7 @@ def api_get_results():
         formatted_secrets.append({
             "id": s["id"],
             "type": s["secret_type"],
+            "raw_value": s["raw_value"],
             "redacted_value": s["redacted_value"],
             "confidence": s["confidence"],
             "entropy": s["entropy"],
@@ -422,6 +423,7 @@ def api_get_results():
             "message_id": s["message_id"],
             "conversation_id": s["conversation_id"],
             "conversation_name": s["conversation_name"],
+            "message_content": s.get("message_content", ""),
             "extra_data": s["extra_data"]
         })
     
@@ -1250,11 +1252,16 @@ def terminator_page():
 def api_get_teams_messages(conversation_id):
     """Get messages from a Teams conversation."""
     try:
-        # Clean conversation_id - remove any query params that might have been appended
+        # Clean conversation_id - remove any query params or trailing numbers that might have been appended
         clean_conv_id = conversation_id.split('?')[0] if '?' in conversation_id else conversation_id
+        # Remove trailing ",number" patterns (e.g. ",200" or ",50")
+        if ',' in clean_conv_id:
+            parts = clean_conv_id.rsplit(',', 1)
+            if parts[1].isdigit():
+                clean_conv_id = parts[0]
         
-        # Build the messages URL
-        messages_url = f"https://emea.ng.msg.teams.microsoft.com/v1/users/ME/conversations/{clean_conv_id}/messages?pageSize=50&startTime=0"
+        # Build the messages URL (without query params - teams_api.get_conversation_messages adds them)
+        messages_url = f"https://emea.ng.msg.teams.microsoft.com/v1/users/ME/conversations/{clean_conv_id}/messages"
         messages = teams_api.get_conversation_messages(messages_url)
         
         formatted_messages = []
